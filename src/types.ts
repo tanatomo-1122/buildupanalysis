@@ -138,6 +138,17 @@ export interface Params {
   /** PC の算出方式 */
   pcMode: PcMode;
   /**
+   * パスコース評価。ON にすると、到達地点だけでなく
+   * ボール → 到達地点 の線分上で PC をサンプリングし、最小値（ボトルネック）を採る。
+   */
+  passLaneEnabled: boolean;
+  /** この距離までは完全なグラウンダー扱い（コース上の敵を全員数える）[m] */
+  laneShortMax: number;
+  /** この距離以上で完全なフライ扱い（中間地点の敵を無視する）[m] */
+  laneLongMin: number;
+  /** U 字の底の広さ p。1 で素の 4(t-0.5)²、大きいほど中間の無視域が広がる */
+  laneSharpness: number;
+  /**
    * パス距離のガウス重み w = exp(-(d-μ)²/2σ²) を目的関数に掛けるか。
    * OFF にすると w = 1 となり、距離を問わない従来の式に戻る。
    */
@@ -156,6 +167,8 @@ export interface ViewOptions {
   heatmap: boolean;
   arrows: boolean;
   targets: boolean;
+  /** パスコースとボトルネック地点を描く */
+  lanes: boolean;
   positions: boolean;
   pcLabels: boolean;
   contribution: boolean;
@@ -171,8 +184,19 @@ export interface PlayerEvaluation {
   from: Vec2;
   /** 暫定到達領域（計算用座標） */
   to: Vec2;
-  /** 到達地点における空間支配率 0.0〜1.0 */
+  /**
+   * そのパスの成功確率 0.0〜1.0。
+   * パスコース評価が ON ならコース上のボトルネック、OFF なら到達地点の値。
+   */
   pc: number;
+  /** 到達地点だけで見た PC（コース評価との比較用） */
+  pcEndpoint: number;
+  /** ボトルネックになった地点。コース評価が OFF なら到達地点そのもの */
+  bottleneck: Vec2;
+  /** ボトルネックがコース上のどこか（0=ボール, 1=到達地点） */
+  bottleneckT: number;
+  /** そのパス距離での浮き具合 0〜1（1 に近いほど完全なフライ扱い） */
+  loft: number;
   /** ボール現在地から到達地点への X 方向進度 [m] */
   dx: number;
   /** ボール現在地から到達地点までの直線距離＝パスの飛距離 [m] */

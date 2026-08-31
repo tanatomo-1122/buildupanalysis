@@ -13,6 +13,7 @@ import type {
   ViewOptions,
 } from '../types';
 import { POSITION_ORDER } from '../types';
+import LoftCurve from './LoftCurve';
 import PassWeightCurve from './PassWeightCurve';
 import { Button, Section, Select, Slider, Toggle } from './ui';
 
@@ -356,6 +357,60 @@ export default function ControlPanel({
         />
       </Section>
 
+      <Section title="パスコース評価">
+        <Toggle
+          label="コース上のボトルネックで評価"
+          checked={params.passLaneEnabled}
+          hint="OFF にすると到達地点の PC だけで評価する（従来の式）。ON/OFF で比較できる。"
+          onChange={(v) => onParams({ passLaneEnabled: v })}
+        />
+        <p className="rounded border border-edge/70 bg-panel/50 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
+          PC(x) = Σ保持側 w / ( Σ保持側 w + Σ守備側 w × I )
+          <span className="mt-1 block">I = 1 − loft(L) × ( 1 − (4(x/L − 0.5)²)^p )</span>
+          <span className="mt-1 block font-sans text-[10px] leading-snug text-slate-500">
+            ボール→到達地点の線分をサンプリングし、最も低い PC をそのパスの成功確率にします。
+            I はインターセプト可能性。長いパスほど中間地点で 0 に近づき、頭上を越えた敵は無視されます。
+            キック直後と落下地点では距離によらず I = 1 です。
+          </span>
+        </p>
+        <Slider
+          label="グラウンダー上限"
+          value={params.laneShortMax}
+          min={3}
+          max={25}
+          step={1}
+          unit=" m"
+          hint="この距離までは浮かないものとして、コース上の敵を全員そのまま数える。"
+          onChange={(v) => onParams({ laneShortMax: Math.min(v, params.laneLongMin - 1) })}
+        />
+        <Slider
+          label="完全フライ距離"
+          value={params.laneLongMin}
+          min={15}
+          max={65}
+          step={1}
+          unit=" m"
+          hint="この距離以上で完全なフライ扱い。中間地点の敵を無視する。"
+          onChange={(v) => onParams({ laneLongMin: Math.max(v, params.laneShortMax + 1) })}
+        />
+        <Slider
+          label="U字の底の広さ p"
+          value={params.laneSharpness}
+          min={1}
+          max={4}
+          step={0.1}
+          hint="1 で素の 4(x/L−0.5)²。上げるほど中間地点の無視域が広がる。"
+          onChange={(v) => onParams({ laneSharpness: v })}
+        />
+        <LoftCurve
+          shortMax={params.laneShortMax}
+          longMin={params.laneLongMin}
+          sharpness={params.laneSharpness}
+          distances={passDistances}
+          enabled={params.passLaneEnabled}
+        />
+      </Section>
+
       <Section title="パス距離の重み">
         <Toggle
           label="距離の重み w を掛ける"
@@ -400,6 +455,12 @@ export default function ControlPanel({
       <Section title="表示">
         <Toggle label="支配領域ヒートマップ" checked={view.heatmap} onChange={(v) => onView({ heatmap: v })} />
         <Toggle label="ベクトル矢印" checked={view.arrows} onChange={(v) => onView({ arrows: v })} />
+        <Toggle
+          label="パスコースとボトルネック"
+          checked={view.lanes}
+          hint="ボールから各到達地点への線と、最も危険な地点（ひし形）を描く。"
+          onChange={(v) => onView({ lanes: v })}
+        />
         <Toggle label="到達領域マーカー" checked={view.targets} onChange={(v) => onView({ targets: v })} />
         <Toggle label="寄与値ラベル" checked={view.contribution} onChange={(v) => onView({ contribution: v })} />
         <Toggle label="ポジション表記" checked={view.positions} onChange={(v) => onView({ positions: v })} />

@@ -18,6 +18,7 @@ const DEFAULT_VIEW: ViewOptions = {
   heatmap: true,
   arrows: true,
   targets: true,
+  lanes: false,
   positions: true,
   pcLabels: false,
   contribution: true,
@@ -332,9 +333,17 @@ export default function App() {
                 保持の別と「シーン」セレクタの組み合わせで適用される列が決まります。
               </p>
               <p>
-                <b className="text-slate-200">PC_i</b> ＝ 到達地点における空間支配率。各選手の影響力を{' '}
+                <b className="text-slate-200">PC_i</b> ＝ そのパスの成功確率。各選手の影響力を{' '}
                 <code className="font-mono text-slate-300">w = exp(-d / λ)</code> とし、
                 保持側の合計 /（保持側＋守備側の合計）で 0.0〜1.0 に正規化します。
+              </p>
+              <p>
+                <b className="text-slate-200">パスコース評価</b>：到達地点だけでなく、
+                ボールから到達地点までの線分をサンプリングして最も低い PC（ボトルネック）を採ります。
+                その際、守備側の影響力にインターセプト可能性係数{' '}
+                <code className="font-mono text-slate-300">I = 1 − loft(L)(1 − 4(x/L − 0.5)²)</code>{' '}
+                を掛けます。短いパスは全区間 I = 1 でコース上の敵を全員数え、長いパスは中間地点で
+                I → 0 となって頭上を越えた敵が無視されます。キック直後と落下地点は距離によらず I = 1 です。
               </p>
               <p>
                 <b className="text-slate-200">期待前進値</b> ＝ Σ (w_i × PC_i × ΔX_i)。

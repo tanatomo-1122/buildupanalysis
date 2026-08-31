@@ -47,7 +47,7 @@ export default function ScorePanel({
       )}
 
       <div className="max-h-[38vh] overflow-auto">
-        <table className="w-full min-w-[620px] text-[12px]">
+        <table className="w-full min-w-[680px] text-[12px]">
           <thead className="sticky top-0 bg-panel2 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-2 py-1.5 text-left font-medium">#</th>
@@ -59,7 +59,15 @@ export default function ScorePanel({
               <th className="px-2 py-1.5 text-right font-medium" title="パス距離のガウス重み">
                 w
               </th>
-              <th className="px-2 py-1.5 text-right font-medium">PC</th>
+              <th className="px-2 py-1.5 text-right font-medium" title="到達地点だけで見た PC">
+                終点
+              </th>
+              <th
+                className="px-2 py-1.5 text-right font-medium"
+                title="採用された PC（コース評価が ON ならコース上のボトルネック）"
+              >
+                PC
+              </th>
               <th className="px-2 py-1.5 text-right font-medium">ΔX</th>
               <th className="px-2 py-1.5 text-right font-medium">寄与</th>
               <th className="w-20 px-2 py-1.5"></th>
@@ -83,7 +91,22 @@ export default function ScorePanel({
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums">
                   {r.distanceWeight.toFixed(2)}
                 </td>
-                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{r.pc.toFixed(2)}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-500">
+                  {r.pcEndpoint.toFixed(2)}
+                </td>
+                <td
+                  className="px-2 py-1.5 text-right font-mono tabular-nums"
+                  title={
+                    r.pc < r.pcEndpoint - 1e-9
+                      ? `コース上のボトルネック（ボールから ${(r.bottleneckT * 100).toFixed(0)}% 地点）で ${r.pcEndpoint.toFixed(2)} から低下`
+                      : '到達地点がそのままボトルネック'
+                  }
+                >
+                  {r.pc.toFixed(2)}
+                  {r.pc < r.pcEndpoint - 0.005 && (
+                    <span className="ml-1 text-[10px] text-amber-500">▼</span>
+                  )}
+                </td>
                 <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(r.dx, 1)}</td>
                 <td
                   className="px-2 py-1.5 text-right font-mono font-semibold tabular-nums"

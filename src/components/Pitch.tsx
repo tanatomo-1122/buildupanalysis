@@ -230,6 +230,39 @@ export default function Pitch({
                 );
               })}
 
+          {/* パスコースとボトルネック */}
+          {view.lanes &&
+            evaluation.players
+              .filter((e) => !e.excluded)
+              .map((e) => (
+                <g key={`lane-${e.playerId}`}>
+                  <line
+                    x1={ball.x}
+                    y1={Y(ball.y)}
+                    x2={e.to.x}
+                    y2={Y(e.to.y)}
+                    stroke={pcColor(e.pc)}
+                    strokeWidth={0.42}
+                    strokeOpacity={0.75}
+                    strokeLinecap="round"
+                  />
+                  <g
+                    transform={`translate(${e.bottleneck.x} ${Y(e.bottleneck.y)}) rotate(45)`}
+                    opacity={e.pc < e.pcEndpoint - 0.005 ? 1 : 0.35}
+                  >
+                    <rect
+                      x={-0.95}
+                      y={-0.95}
+                      width={1.9}
+                      height={1.9}
+                      fill={pcColor(e.pc)}
+                      stroke="rgba(4,10,16,0.85)"
+                      strokeWidth={0.28}
+                    />
+                  </g>
+                </g>
+              ))}
+
           {/* 保持側の到達領域（PC で着色） */}
           {view.targets &&
             evaluation.players.map((e) => (
