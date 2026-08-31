@@ -274,3 +274,4 @@ src/
   重み付き平均にしたり、後方の選手だけに絞ったりできる
 - **注意**：`Heatmap.tsx` は速度のため PC 式を手書きで展開している。
   `pitchControl.ts` を変更したらこちらも合わせること
+# buildupanalysis
