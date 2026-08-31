@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景: ダーク角丸スクエア -->
+  <rect width="64" height="64" rx="14" fill="#0F172A"/>
+  
+  <!-- グラデーション定義 -->
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 上昇・ビルドアップを象徴するデータバー ＆ 'B'モチーフ -->
+  <rect x="14" y="34" width="8" height="16" rx="4" fill="url(#brandGrad)" opacity="0.6"/>
+  <rect x="28" y="24" width="8" height="26" rx="4" fill="url(#brandGrad)" opacity="0.85"/>
+  <rect x="42" y="14" width="8" height="36" rx="4" fill="url(#brandGrad)"/>
+  
+  <!-- 上昇トレンドライン/アクセントノード -->
+  <circle cx="46" cy="14" r="3" fill="#38BDF8"/>
+</svg>
