@@ -7,8 +7,8 @@
  *   node tools/mock-supabase.mjs          # http://localhost:54321 で起動
  *
  * `.env.local` に次を書いて `npm run dev` すると、このモックに繋がります。
- *   NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
- *   NEXT_PUBLIC_SUPABASE_ANON_KEY=mock
+ *   VITE_SUPABASE_URL=http://localhost:54321
+ *   VITE_SUPABASE_ANNON_KEY=mock
  */
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';

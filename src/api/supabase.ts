@@ -5,12 +5,12 @@
  * GET / POST / PATCH / DELETE の4種類だけなので依存を増やす必要がない。
  *
  * 接続情報は Vite の環境変数から読む（`.env.local` に置く）:
- *   NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
- *   NEXT_PUBLIC_SUPABASE_ANON_KEY=ey...
+ *   VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
+ *   VITE_SUPABASE_ANNON_KEY=ey...
  */
 
-const url = (import.meta.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/+$/, '');
-const anonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const url = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, '');
+const anonKey = import.meta.env.VITE_SUPABASE_ANNON_KEY ?? '';
 
 export const supabaseConfigured = Boolean(url && anonKey);
 
@@ -37,7 +37,7 @@ const headers = (extra: Record<string, string> = {}): Record<string, string> => 
 const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   if (!supabaseConfigured) {
     throw new SupabaseError(
-      'Supabase の接続情報が設定されていません。.env.local に NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください。',
+      'Supabase の接続情報が設定されていません。.env.local に VITE_SUPABASE_URL と VITE_SUPABASE_ANNON_KEY を設定してください。',
     );
   }
   let res: Response;
