@@ -2,20 +2,17 @@ import { POSITION_GROUP } from '../constants';
 import { FORMATIONS } from '../data/formations';
 import { isSkillValidFor, skillById, skillOptions } from '../data/skills';
 import { SCENES, STYLE_PHASE_LABEL, TEAM_STYLES, styleById, stylePhaseKey } from '../data/styles';
-import type {
-  HolderMode,
-  Params,
-  PcMode,
-  Player,
-  PositionId,
-  SceneId,
-  TeamId,
-  ViewOptions,
-} from '../types';
+import type { Params, Player, PositionId, SceneId, TeamId, ViewOptions } from '../types';
 import { POSITION_ORDER } from '../types';
-import LoftCurve from './LoftCurve';
-import PassWeightCurve from './PassWeightCurve';
 import { Button, Section, Select, Slider, Toggle } from './ui';
+
+/**
+ * 戦術ボードの操作パネル。
+ *
+ * モデルの定数（λ・μ・σ・弾道の閾値など）はコード側で固定してあり、ここには出さない。
+ * 触れるのは「戦術上の選択」だけ：ボール保持、局面、チームスタイル、フォーメーション、
+ * 個々の選手の配置と特性、そして表示のオン／オフ。
+ */
 
 interface Props {
   params: Params;
@@ -30,17 +27,7 @@ interface Props {
   onPlayer: (playerId: string, patch: Partial<Player>) => void;
   onPos: (playerId: string, x: number, y: number) => void;
   onFormation: (team: TeamId, formationId: string, line: number) => void;
-  onResetSkills: (team: TeamId) => void;
-  onSnapBall: () => void;
-  /** ボールが保持側の近くに無い（局面として不自然）かどうか */
-  ballMismatch: boolean;
-  /** 盤面上の各選手のパス距離（曲線プレビュー用） */
-  passDistances: { number: number; d: number }[];
-  /** 起点平均に使われている起点の数 */
-  holderCount: number;
   onReset: () => void;
-  onExport: () => void;
-  onImport: () => void;
 }
 
 const TEAM_LABEL: Record<TeamId, string> = { home: '自チーム', away: '相手チーム' };
@@ -55,21 +42,6 @@ function TeamDot({ team }: { team: TeamId }) {
   );
 }
 
-/** そのチームに今どの列が適用されているかを示す小さなバッジ */
-function PhaseBadge({ params, team }: { params: Params; team: TeamId }) {
-  const key = stylePhaseKey(params.scene, team, params.possessionTeam);
-  const attacking = team === params.possessionTeam;
-  return (
-    <span
-      className={`ml-1.5 rounded px-1.5 py-0.5 align-middle text-[10px] ${
-        attacking ? 'bg-emerald-500/20 text-emerald-300' : 'bg-edge text-slate-300'
-      }`}
-    >
-      {STYLE_PHASE_LABEL[key]}
-    </span>
-  );
-}
-
 function TeamStyleBlock({
   team,
   params,
@@ -80,16 +52,22 @@ function TeamStyleBlock({
   onParams: (patch: Partial<Params>) => void;
 }) {
   const styleId = team === 'home' ? params.homeStyle : params.awayStyle;
-  const intensity = team === 'home' ? params.homeStyleIntensity : params.awayStyleIntensity;
   const style = styleById(styleId);
   const key = stylePhaseKey(params.scene, team, params.possessionTeam);
+  const attacking = team === params.possessionTeam;
 
   return (
     <div className="rounded-md border border-edge/70 bg-panel/50 p-2.5">
       <div className="mb-1.5 flex items-center text-[12px] font-medium">
         <TeamDot team={team} />
         {TEAM_LABEL[team]}
-        <PhaseBadge params={params} team={team} />
+        <span
+          className={`ml-1.5 rounded px-1.5 py-0.5 align-middle text-[10px] ${
+            attacking ? 'bg-emerald-500/20 text-emerald-300' : 'bg-edge text-slate-300'
+          }`}
+        >
+          {STYLE_PHASE_LABEL[key]}
+        </span>
       </div>
       <select
         className="w-full"
@@ -105,18 +83,6 @@ function TeamStyleBlock({
         ))}
       </select>
       <p className="mt-1.5 text-[11px] leading-snug text-slate-500">{style.phases[key].desc}</p>
-      <div className="mt-2">
-        <Slider
-          label="強度"
-          value={intensity}
-          min={0}
-          max={2}
-          step={0.05}
-          onChange={(v) =>
-            onParams(team === 'home' ? { homeStyleIntensity: v } : { awayStyleIntensity: v })
-          }
-        />
-      </div>
     </div>
   );
 }
@@ -126,13 +92,11 @@ function FormationBlock({
   formationId,
   line,
   onFormation,
-  onResetSkills,
 }: {
   team: TeamId;
   formationId: string;
   line: number;
   onFormation: (team: TeamId, formationId: string, line: number) => void;
-  onResetSkills: (team: TeamId) => void;
 }) {
   return (
     <div className="rounded-md border border-edge/70 bg-panel/50 p-2.5">
@@ -162,9 +126,6 @@ function FormationBlock({
           onChange={(v) => onFormation(team, formationId, v)}
         />
       </div>
-      <div className="mt-2 flex justify-end">
-        <Button onClick={() => onResetSkills(team)}>特性をポジション既定に戻す</Button>
-      </div>
     </div>
   );
 }
@@ -182,23 +143,15 @@ export default function ControlPanel({
   onPlayer,
   onPos,
   onFormation,
-  onResetSkills,
-  onSnapBall,
-  ballMismatch,
-  passDistances,
-  holderCount,
   onReset,
-  onExport,
-  onImport,
 }: Props) {
   const scene = SCENES.find((s) => s.id === params.scene) ?? SCENES[0];
-  const defending: TeamId = params.possessionTeam === 'home' ? 'away' : 'home';
 
   return (
     <div className="space-y-3">
       <Section title="局面">
         <div>
-          <span className="mb-1 block text-[13px] text-slate-200">ボール保持（攻撃／守備）</span>
+          <span className="mb-1 block text-[13px] text-slate-200">ボール保持</span>
           <div className="grid grid-cols-2 gap-1.5">
             {(['home', 'away'] as TeamId[]).map((t) => (
               <button
@@ -217,75 +170,22 @@ export default function ControlPanel({
             ))}
           </div>
           <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
-            保持側は<b className="text-slate-300">攻撃時特性</b>、非保持側は
-            <b className="text-slate-300">守備時特性</b>が発動します。期待前進値は
-            {TEAM_LABEL[params.possessionTeam]}（保持側）の攻撃方向で算出されます。
-            {params.possessionTeam === 'away' &&
-              '「自チームが守備」ではスコアは “相手にどれだけ前進を許すか” を表します。'}
+            保持側は攻撃時のプレースタイル、非保持側は守備時のプレースタイルが発動します。
           </p>
         </div>
-
-        {ballMismatch && (
-          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5">
-            <p className="text-[11px] leading-snug text-amber-200">
-              ボールが{TEAM_LABEL[params.possessionTeam]}の選手から離れています。
-              このままだと ΔX がほぼ全員マイナスになり、局面として不自然です。
-            </p>
-            <div className="mt-1.5 flex justify-end">
-              <Button tone="primary" onClick={onSnapBall}>
-                ボールを保持側の最寄り選手へ
-              </Button>
-            </div>
-          </div>
-        )}
 
         <Select<SceneId>
           label="シーン"
           value={params.scene}
           options={SCENES.map((s) => ({ value: s.id, label: s.label }))}
+          hint={scene.desc}
           onChange={(v) => onParams({ scene: v })}
         />
-        <p className="text-[11px] leading-snug text-slate-500">{scene.desc}</p>
-      </Section>
-
-      <Section title="評価の起点">
-        <Select<HolderMode>
-          label="スコアの取り方"
-          value={params.holderMode}
-          options={[
-            { value: 'averageOutfield', label: `GK以外 ${holderCount} 人の起点の平均` },
-            { value: 'current', label: '現在のボール位置だけ' },
-          ]}
-          onChange={(v) => onParams({ holderMode: v })}
-        />
-        {params.holderMode === 'averageOutfield' ? (
-          <p className="text-[11px] leading-snug text-slate-500">
-            保持側の GK 以外の各選手を順にボールホルダーに置いて期待前進値を計算し、その平均を取ります。
-            ボールをどこに置いたかに左右されない「配置そのものの前進しやすさ」になり、
-            フォーメーション比較もボール位置に依存しなくなります。
-            <b className="text-slate-300">ピッチの矢印・支配領域は現在のボール位置のまま</b>
-            描かれます（起点ごとに変わるため）。
-          </p>
-        ) : (
-          <p className="text-[11px] leading-snug text-slate-500">
-            いま盤面に置いてあるボールの位置だけで評価します。
-            特定の局面を作り込んで検証したいときはこちら。
-          </p>
-        )}
       </Section>
 
       <Section title="チームスタイル">
         <TeamStyleBlock team="home" params={params} onParams={onParams} />
         <TeamStyleBlock team="away" params={params} onParams={onParams} />
-        <Slider
-          label="選手特性の効き"
-          value={params.skillIntensity}
-          min={0}
-          max={2}
-          step={0.05}
-          hint="個々の特性係数の倍率。0 にするとチームスタイルだけの影響を見られる。"
-          onChange={(v) => onParams({ skillIntensity: v })}
-        />
       </Section>
 
       <Section title="フォーメーション">
@@ -294,24 +194,22 @@ export default function ControlPanel({
           formationId={homeFormation}
           line={homeLine}
           onFormation={onFormation}
-          onResetSkills={onResetSkills}
         />
         <FormationBlock
           team="away"
           formationId={awayFormation}
           line={awayLine}
           onFormation={onFormation}
-          onResetSkills={onResetSkills}
         />
         <p className="text-[11px] leading-snug text-slate-500">
-          変更しても攻撃時・守備時の特性は引き継がれます。差し替わるのは座標とポジション表記だけです。
+          変更しても各選手のプレースタイルは引き継がれます。差し替わるのは座標とポジション表記だけです。
         </p>
       </Section>
 
       <Section title="選択中の選手">
         {!selected ? (
           <p className="text-[12px] text-slate-500">
-            ピッチ上の選手をクリックすると、ポジションと攻守の特性を編集できます。
+            ピッチ上の選手をクリックすると、ポジションとプレースタイルを編集できます。
           </p>
         ) : (
           <SelectedPlayerEditor
@@ -323,142 +221,12 @@ export default function ControlPanel({
         )}
       </Section>
 
-      <Section title="Pitch Control">
-        <Slider
-          label="減衰率 λ"
-          value={params.lambda}
-          min={2}
-          max={25}
-          step={0.5}
-          unit=" m"
-          hint="影響力 w = exp(-d/λ)。小さいほど「その場にいる選手だけ」が効く。"
-          onChange={(v) => onParams({ lambda: v })}
-        />
-        <Select<PcMode>
-          label="算出方式"
-          value={params.pcMode}
-          options={[
-            { value: 'team', label: 'チーム合算（味方の援護を含む）' },
-            { value: 'individual', label: '個人 vs 守備側全員（受け切れるか）' },
-          ]}
-          onChange={(v) => onParams({ pcMode: v })}
-        />
-        <Toggle
-          label={`守備側（${TEAM_LABEL[defending]}）も到達領域で評価`}
-          checked={params.opponentUsesVector}
-          hint="OFF にすると守備側は現在地のまま。プレスの前後で比較できる。"
-          onChange={(v) => onParams({ opponentUsesVector: v })}
-        />
-        <Toggle
-          label="ΔX のマイナスを切り捨て"
-          checked={params.clipNegativeProgress}
-          hint="下がる動きの負の寄与を 0 にする。前進のみを評価したいとき。"
-          onChange={(v) => onParams({ clipNegativeProgress: v })}
-        />
-      </Section>
-
-      <Section title="パスコース評価">
-        <Toggle
-          label="コース上のボトルネックで評価"
-          checked={params.passLaneEnabled}
-          hint="OFF にすると到達地点の PC だけで評価する（従来の式）。ON/OFF で比較できる。"
-          onChange={(v) => onParams({ passLaneEnabled: v })}
-        />
-        <p className="rounded border border-edge/70 bg-panel/50 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
-          PC(x) = Σ保持側 w / ( Σ保持側 w + Σ守備側 w × I )
-          <span className="mt-1 block">I = 1 − loft(L) × ( 1 − (4(x/L − 0.5)²)^p )</span>
-          <span className="mt-1 block font-sans text-[10px] leading-snug text-slate-500">
-            ボール→到達地点の線分をサンプリングし、最も低い PC をそのパスの成功確率にします。
-            I はインターセプト可能性。長いパスほど中間地点で 0 に近づき、頭上を越えた敵は無視されます。
-            キック直後と落下地点では距離によらず I = 1 です。
-          </span>
-        </p>
-        <Slider
-          label="グラウンダー上限"
-          value={params.laneShortMax}
-          min={3}
-          max={25}
-          step={1}
-          unit=" m"
-          hint="この距離までは浮かないものとして、コース上の敵を全員そのまま数える。"
-          onChange={(v) => onParams({ laneShortMax: Math.min(v, params.laneLongMin - 1) })}
-        />
-        <Slider
-          label="完全フライ距離"
-          value={params.laneLongMin}
-          min={15}
-          max={65}
-          step={1}
-          unit=" m"
-          hint="この距離以上で完全なフライ扱い。中間地点の敵を無視する。"
-          onChange={(v) => onParams({ laneLongMin: Math.max(v, params.laneShortMax + 1) })}
-        />
-        <Slider
-          label="U字の底の広さ p"
-          value={params.laneSharpness}
-          min={1}
-          max={4}
-          step={0.1}
-          hint="1 で素の 4(x/L−0.5)²。上げるほど中間地点の無視域が広がる。"
-          onChange={(v) => onParams({ laneSharpness: v })}
-        />
-        <LoftCurve
-          shortMax={params.laneShortMax}
-          longMin={params.laneLongMin}
-          sharpness={params.laneSharpness}
-          distances={passDistances}
-          enabled={params.passLaneEnabled}
-        />
-      </Section>
-
-      <Section title="パス距離の重み">
-        <Toggle
-          label="距離の重み w を掛ける"
-          checked={params.passWeightEnabled}
-          hint="OFF にすると w = 1 になり、距離を問わない従来の式に戻る。ON/OFF で比較できる。"
-          onChange={(v) => onParams({ passWeightEnabled: v })}
-        />
-        <p className="rounded border border-edge/70 bg-panel/50 p-2 font-mono text-[11px] leading-relaxed text-slate-400">
-          w = exp( −(d − μ)² / 2σ² )
-          <span className="mt-1 block font-sans text-[10px] text-slate-500">
-            d はボール現在地から到達地点までの直線距離（＝パスの飛距離）。ΔX とは別の量。
-          </span>
-        </p>
-        <Slider
-          label="最適パス距離 μ"
-          value={params.passMu}
-          min={2}
-          max={60}
-          step={1}
-          unit=" m"
-          hint="この距離のパスに最大の重み 1.0 を与える。"
-          onChange={(v) => onParams({ passMu: v })}
-        />
-        <Slider
-          label="許容幅 σ"
-          value={params.passSigma}
-          min={1}
-          max={40}
-          step={0.5}
-          unit=" m"
-          hint="大きいほど距離にこだわらない。小さいほど μ 付近のパスだけを評価する。"
-          onChange={(v) => onParams({ passSigma: v })}
-        />
-        <PassWeightCurve
-          mu={params.passMu}
-          sigma={params.passSigma}
-          distances={passDistances}
-          enabled={params.passWeightEnabled}
-        />
-      </Section>
-
       <Section title="表示">
         <Toggle label="支配領域ヒートマップ" checked={view.heatmap} onChange={(v) => onView({ heatmap: v })} />
         <Toggle label="ベクトル矢印" checked={view.arrows} onChange={(v) => onView({ arrows: v })} />
         <Toggle
           label="パスコースとボトルネック"
           checked={view.lanes}
-          hint="ボールから各到達地点への線と、最も危険な地点（ひし形）を描く。"
           onChange={(v) => onView({ lanes: v })}
         />
         <Toggle label="到達領域マーカー" checked={view.targets} onChange={(v) => onView({ targets: v })} />
@@ -467,16 +235,9 @@ export default function ControlPanel({
         <Toggle label="PC 値ラベル" checked={view.pcLabels} onChange={(v) => onView({ pcLabels: v })} />
       </Section>
 
-      <Section title="局面データ">
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={onExport}>JSON書き出し</Button>
-          <Button onClick={onImport}>JSON読み込み</Button>
-          <Button onClick={onReset}>初期化</Button>
-        </div>
-        <p className="text-[11px] leading-snug text-slate-500">
-          配置とパラメータはブラウザに自動保存されます。
-        </p>
-      </Section>
+      <div className="flex justify-end">
+        <Button onClick={onReset}>盤面を初期化</Button>
+      </div>
     </div>
   );
 }
@@ -505,8 +266,9 @@ function SelectedPlayerEditor({
         >
           {selected.number}
         </span>
-        <span className="text-[12px] text-slate-400">
-          {TEAM_LABEL[selected.team]} ／ {POSITION_GROUP[selected.position]}
+        <span className="text-[12px] text-slate-300">
+          {selected.name || TEAM_LABEL[selected.team]}
+          <span className="ml-1.5 text-slate-500">{POSITION_GROUP[selected.position]}</span>
         </span>
       </div>
 
@@ -518,7 +280,7 @@ function SelectedPlayerEditor({
       />
 
       <SkillField
-        label="攻撃時の特性"
+        label="攻撃時のプレースタイル"
         active={attacking}
         position={selected.position}
         phase="attack"
@@ -526,7 +288,7 @@ function SelectedPlayerEditor({
         onChange={(v) => onPlayer(selected.id, { attackSkill: v })}
       />
       <SkillField
-        label="守備時の特性"
+        label="守備時のプレースタイル"
         active={!attacking}
         position={selected.position}
         phase="defense"
@@ -587,10 +349,10 @@ function SkillField({
         {label}
         {active ? (
           <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-            この局面で発動中
+            発動中
           </span>
         ) : (
-          <span className="text-[10px] text-slate-600">（この局面では未発動）</span>
+          <span className="text-[10px] text-slate-600">（未発動）</span>
         )}
         {outOfPosition && (
           <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">

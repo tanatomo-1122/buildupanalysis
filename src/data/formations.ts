@@ -43,7 +43,7 @@ export const FORMATIONS: Formation[] = [
       s(5, 'CB', 17, 42),
       s(3, 'LSB', 24, 60),
       s(6, 'CMF', 34, 34),
-      s(8, 'DMF', 44, 22),
+      s(8, 'CMF', 44, 22),
       s(10, 'CMF', 44, 46),
       s(7, 'RWG', 60, 8),
       s(9, 'CF', 66, 34),
@@ -61,8 +61,8 @@ export const FORMATIONS: Formation[] = [
       s(5, 'CB', 17, 42),
       s(3, 'LSB', 24, 60),
       s(6, 'DMF', 30, 34),
-      s(8, 'OMF', 44, 24),
-      s(10, 'OMF', 44, 44),
+      s(8, 'CMF', 44, 24),
+      s(10, 'CMF', 44, 44),
       s(7, 'RWG', 60, 8),
       s(9, 'CF', 66, 34),
       s(11, 'LWG', 60, 60),
@@ -82,7 +82,7 @@ export const FORMATIONS: Formation[] = [
       s(7, 'RMF', 46, 12),
       s(10, 'OMF', 48, 34),
       s(11, 'LMF', 46, 56),
-      s(8, 'CF', 62, 26),
+      s(8, 'ST', 62, 26),
       s(9, 'CF', 64, 42),
     ],
   },
@@ -136,7 +136,7 @@ export const FORMATIONS: Formation[] = [
       s(2, 'RMF', 50, 10),
       s(10, 'OMF', 52, 34),
       s(3, 'LMF', 50, 58),
-      s(11, 'CF', 66, 26),
+      s(11, 'ST', 66, 26),
       s(9, 'CF', 66, 42),
     ],
   },
@@ -208,7 +208,7 @@ export const FORMATIONS: Formation[] = [
       s(7, 'CMF', 46, 27),
       s(10, 'CMF', 46, 41),
       s(3, 'LMF', 46, 60),
-      s(11, 'CF', 64, 26),
+      s(11, 'ST', 64, 26),
       s(9, 'CF', 64, 42),
     ],
   },
@@ -262,7 +262,7 @@ export const FORMATIONS: Formation[] = [
       s(6, 'CMF', 38, 26),
       s(8, 'CMF', 38, 42),
       s(11, 'LMF', 40, 58),
-      s(10, 'CF', 58, 26),
+      s(10, 'ST', 58, 26),
       s(9, 'CF', 60, 42),
     ],
   },
@@ -295,10 +295,10 @@ export const FORMATIONS: Formation[] = [
       s(6, 'CB', 18, 48),
       s(8, 'DMF', 32, 26),
       s(7, 'DMF', 32, 42),
-      s(2, 'RMF', 52, 6),
+      s(2, 'RWG', 52, 6),
       s(10, 'OMF', 54, 25),
       s(11, 'OMF', 54, 43),
-      s(3, 'LMF', 52, 62),
+      s(3, 'LWG', 52, 62),
       s(9, 'CF', 68, 34),
     ],
   },
@@ -334,7 +334,7 @@ export const FORMATIONS: Formation[] = [
       s(8, 'DMF', 32, 34),
       s(7, 'CMF', 44, 24),
       s(10, 'CMF', 44, 44),
-      s(11, 'CF', 60, 28),
+      s(11, 'ST', 60, 28),
       s(9, 'CF', 62, 40),
     ],
   },
@@ -346,7 +346,7 @@ export const formationById = (id: string): Formation =>
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** スロットの座標を、そのチームの向きとライン高さに合わせて実座標へ変換する */
-const slotPosition = (slot: FormationSlot, team: TeamId, line: number) => {
+export const slotPosition = (slot: FormationSlot, team: TeamId, line: number) => {
   const x = team === 'home' ? slot.x + line : PITCH_LENGTH - slot.x - line;
   const y = team === 'home' ? slot.y : PITCH_WIDTH - slot.y;
   return { x: clamp(x, 1, PITCH_LENGTH - 1), y: clamp(y, 1, PITCH_WIDTH - 1) };

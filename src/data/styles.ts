@@ -46,7 +46,7 @@ export const TEAM_STYLES: StyleDef[] = [
       },
       defense: {
         desc: 'ディフェンスラインを高く保ち、チーム全体で積極的にプレスをかけます',
-        coeff: c({ forward: 6.0, ballward: 5.0 }),
+        coeff: c({ forward: 5.0, ballward: 4.0 }),
       },
       transitionWin: {
         desc: '高い位置でボールを奪った際、選手は積極的に前に走り、ゴールにダイレクトに向かうカウンター攻撃を仕掛けます',

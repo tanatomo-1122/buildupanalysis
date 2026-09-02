@@ -87,11 +87,35 @@ export interface StyleDef {
   phases: Record<StylePhaseKey, { desc: string; coeff: VectorCoeff }>;
 }
 
+/** eFootball のユーザーネームと ID で識別するプロフィール */
+export interface UserProfile {
+  id: string;
+  userName: string;
+  efootballId: string;
+  createdAt: string;
+}
+
+/** 登録選手（23名） */
+export interface SquadPlayer {
+  id: string;
+  /** 並び順（0〜22） */
+  slotIndex: number;
+  name: string;
+  /** メインポジション */
+  position: PositionId;
+  /** 攻撃時のプレースタイル */
+  attackSkill: string;
+  /** 守備時のプレースタイル */
+  defenseSkill: string;
+}
+
 export interface Player {
   id: string;
   team: TeamId;
   /** 背番号（表示用） */
   number: number;
+  /** 登録選手から起用された場合の選手名 */
+  name?: string;
   position: PositionId;
   /** 攻撃時に発動する特性 ID（'none' で特性なし） */
   attackSkill: string;

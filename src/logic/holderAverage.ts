@@ -45,8 +45,14 @@ export const averageOverHolders = (
   fallbackBall: Vec2,
   params: Params,
   team: TeamId = params.possessionTeam,
+  /** 起点を間引いて速く見積もりたいときの上限（探索用）。省略すると全員 */
+  maxHolders?: number,
 ): HolderAverage => {
-  const candidates = outfieldHolders(players, team);
+  const all = outfieldHolders(players, team);
+  const candidates =
+    maxHolders && maxHolders > 0 && all.length > maxHolders
+      ? Array.from({ length: maxHolders }, (_, i) => all[Math.round((i * (all.length - 1)) / (maxHolders - 1))])
+      : all;
 
   if (candidates.length === 0) {
     return {
