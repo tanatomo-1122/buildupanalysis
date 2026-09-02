@@ -22,8 +22,8 @@
 ```bash
 cp .env.example .env.local
 # .env.local を編集
-#   VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
-#   VITE_SUPABASE_ANON_KEY=ey...
+#   NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY=ey...
 ```
 
 ### 3. 起動
