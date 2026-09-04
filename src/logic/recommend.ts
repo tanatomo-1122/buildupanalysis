@@ -5,6 +5,8 @@ import { positionFit } from '../data/positions';
 import { isSkillValidFor } from '../data/skills';
 import type { Params, Player, PositionId, SceneId, SquadPlayer, TeamId, Vec2 } from '../types';
 import { assignByScore } from './assign';
+import { analyzeDensity, spaceExploitation } from './density';
+import type { DensityReport } from './density';
 import { averageOverHolders } from './holderAverage';
 
 /**
@@ -19,6 +21,10 @@ import { averageOverHolders } from './holderAverage';
  *
  * 1 の適性だけでは「ポジションは合っているが戦術的には噛み合わない」布陣になるため、
  * 3 の実評価による改善を挟んでいる。
+ *
+ * 相手は「フォーメーション名」ではなく **実際に置かれた11人の座標** を受け取る。
+ * これにより、極端な片攻めや3CFのような変則配置もそのまま解析できる。
+ * 配置は密度解析（logic/density.ts）にかけ、空いているゾーンを突けている布陣を加点する。
  */
 
 /** 何を基準に「最適」とするか */
@@ -56,6 +62,10 @@ export interface FormationRecommendation {
   fitAverage: number;
   /** 本職から外れた起用に対する減点（探索の目的関数で引かれた分） */
   fitPenalty: number;
+  /** 相手の空いているゾーンをどれだけ突けているか 0〜1 */
+  spaceScore: number;
+  /** 採用判断に使う総合値（戦術スコア − 適性減点 + 密度加点） */
+  score: number;
   assignments: SlotAssignment[];
   /** 盤面にそのまま渡せる自チーム11人 */
   lineup: Player[];
@@ -66,17 +76,19 @@ export interface RecommendInput {
   /** 名前が入っている登録選手（11人以上必要） */
   squad: SquadPlayer[];
   homeStyle: string;
-  opponentFormation: string;
+  /** 相手の11人。プリセットでもフリーエディットの結果でもよい */
+  opponentPlayers: Player[];
   opponentStyle: string;
   scene: SceneId;
   homeLine: number;
-  awayLine: number;
   rankMode: RankMode;
 }
 
 export interface RecommendResult {
   rows: FormationRecommendation[];
   best: FormationRecommendation;
+  /** 相手配置の密度解析 */
+  density: DensityReport;
   /** 探索に使った盤面評価の回数（性能の目安） */
   evaluations: number;
   elapsedMs: number;
@@ -156,12 +168,22 @@ const fitPenaltyOf = (slots: FormationSlot[], picks: SquadPlayer[]): number =>
     0,
   );
 
+/**
+ * 密度解析の加点。
+ *
+ * PC は連続的な密度をすでに見ているので、ここは強くしすぎない。
+ * 「戦術スコアがほぼ互角のとき、相手が空けているゾーンを突けている形を採る」
+ * ためのタイブレーカーとして働く重みにしてある。
+ */
+const DENSITY_WEIGHT = 3;
+
 const objective = (
   attack: number,
   defense: number,
   mode: RankMode,
   penalty: number,
-): number => tacticalValue(attack, defense, mode) - penalty;
+  space: number,
+): number => tacticalValue(attack, defense, mode) - penalty + DENSITY_WEIGHT * space;
 
 /* ------------------------------------------------------------------ *
  * 布陣の組み立て
@@ -208,7 +230,8 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     throw new Error('起用できる選手が11人に足りません');
   }
 
-  const away = buildLineup('away', input.opponentFormation, input.awayLine);
+  const away = input.opponentPlayers;
+  const density = analyzeDensity(away);
 
   const raw = FORMATIONS.map((formation) => {
     const slots = formation.slots;
@@ -219,9 +242,16 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     let picks = assigned.map((idx) => squad[idx]);
 
     // 2. 実際に評価する（探索中は起点を間引く）
-    let scored = scoreBoard([...toLineup(slots, picks, input.homeLine), ...away], input, SEARCH.quickHolders);
+    const initialLineup = toLineup(slots, picks, input.homeLine);
+    const scored = scoreBoard([...initialLineup, ...away], input, SEARCH.quickHolders);
     evaluations += 2;
-    let best = objective(scored.attack, scored.defense, input.rankMode, fitPenaltyOf(slots, picks));
+    let best = objective(
+      scored.attack,
+      scored.defense,
+      input.rankMode,
+      fitPenaltyOf(slots, picks),
+      spaceExploitation(initialLineup, density),
+    );
 
     // 3. ベンチとの入れ替えで改善を試す（first-improvement の山登り）
     const benchOf = (current: SquadPlayer[]) =>
@@ -241,16 +271,18 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
         for (const c of candidates) {
           const trial = picks.slice();
           trial[i] = c.p;
-          const s = scoreBoard(
-            [...toLineup(slots, trial, input.homeLine), ...away],
-            input,
-            SEARCH.quickHolders,
-          );
+          const trialLineup = toLineup(slots, trial, input.homeLine);
+          const s = scoreBoard([...trialLineup, ...away], input, SEARCH.quickHolders);
           evaluations += 2;
-          const v = objective(s.attack, s.defense, input.rankMode, fitPenaltyOf(slots, trial));
+          const v = objective(
+            s.attack,
+            s.defense,
+            input.rankMode,
+            fitPenaltyOf(slots, trial),
+            spaceExploitation(trialLineup, density),
+          );
           if (v > best + 1e-9) {
             picks = trial;
-            scored = s;
             best = v;
             improved = true;
             break;
@@ -264,6 +296,8 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     const lineup = toLineup(slots, picks, input.homeLine);
     const final = scoreBoard([...lineup, ...away], input);
     evaluations += 2;
+    const spaceScore = spaceExploitation(lineup, density);
+    const fitPenalty = fitPenaltyOf(slots, picks);
 
     const assignments: SlotAssignment[] = slots.map((slot, i) => ({
       slot,
@@ -280,7 +314,10 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
       defense: final.defense,
       balance: final.attack - final.defense,
       fitAverage: assignments.reduce((a, b) => a + Math.min(100, b.positionFit), 0) / assignments.length,
-      fitPenalty: fitPenaltyOf(slots, picks),
+      fitPenalty,
+      spaceScore,
+      /** 最終的な採用判断に使う値。戦術スコア − 適性減点 + 密度加点 */
+      score: objective(final.attack, final.defense, input.rankMode, fitPenalty, spaceScore),
       assignments,
       lineup,
       bench: benchOf(picks),
@@ -298,17 +335,14 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     balanceRank: byBalance.indexOf(r.formationId) + 1,
   }));
 
-  const key =
-    input.rankMode === 'attack'
-      ? 'attackRank'
-      : input.rankMode === 'defense'
-        ? 'defenseRank'
-        : 'balanceRank';
-  const sorted = [...rows].sort((a, b) => a[key] - b[key]);
+  // 並びは総合値。相手の空きゾーンを突けているか（密度加点）と
+  // 本職起用かどうか（適性減点）を含めた、実際に採るべき順。
+  const sorted = [...rows].sort((a, b) => b.score - a.score);
 
   return {
     rows: sorted,
     best: sorted[0],
+    density,
     evaluations,
     elapsedMs: Date.now() - started,
   };

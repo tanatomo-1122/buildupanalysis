@@ -3,7 +3,6 @@ import { blankSquad } from './api/squad';
 import { supabaseConfigured } from './api/supabase';
 import { Notice } from './components/ui';
 import { DEFAULT_PARAMS } from './constants';
-import { opponentLineup } from './logic/recommend';
 import type { FormationRecommendation } from './logic/recommend';
 import BoardPage from './pages/BoardPage';
 import ProfilePage from './pages/ProfilePage';
@@ -61,7 +60,8 @@ export default function App() {
 
   /** 提案された布陣を盤面に流し込む */
   const openBoard = useCallback((rec: FormationRecommendation, ctx: BoardContext) => {
-    const away = opponentLineup(ctx.opponentFormation, ctx.awayLine);
+    // フリーエディットの結果をそのまま盤面へ持っていく
+    const away = ctx.opponentPlayers;
     setBoard({
       players: [...rec.lineup, ...away],
       ball: { ...rec.lineup.find((p) => p.position === 'CB')?.pos ?? rec.lineup[1].pos },
@@ -77,7 +77,7 @@ export default function App() {
       homeLine: 0,
       awayLine: ctx.awayLine,
     });
-    setSeededFrom(`${rec.label}（対 ${ctx.opponentFormation}）`);
+    setSeededFrom(`${rec.label}（対 ${ctx.opponentLabel}）`);
     setTab('board');
   }, []);
 
