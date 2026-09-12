@@ -20,7 +20,55 @@ const evalPositions = (players: Player[], ball: Vec2, params: Params): Map<strin
 };
 
 /**
- * 期待前進値 = Σ ( w_i × PC_i × ΔX_i )
+ * パス1本の価値。params.valueModel で2つのモデルを切り替える。
+ *
+ * ■ progress（従来）
+ *
+ *     value = w × PC × ΔX
+ *
+ *   前進量に比例するので「どれだけ前に運べるか」を直接測る。
+ *   反面、コースがどれだけ空いていても横パスは 0 点、バックパスはマイナスになるため、
+ *   ポジショナルプレーでいう「保持を安定させる逃げ道」が一切評価されない。
+ *
+ * ■ passOptions（パスコース探索型）
+ *
+ *     value = 開通度(PC) × (1.0 + ΔX × 0.01 + w × 0.1)
+ *     開通度 = PC >= 閾値 ? 1 : 0                     （passSoftness = 0：仕様どおりの硬い判定）
+ *            = sigmoid((PC − 閾値) / passSoftness)    （passSoftness > 0：なめらかな判定）
+ *
+ *   ボトルネック PC が閾値を超えていれば「そのコースは通る」とみなして基本点 1.0 を与え、
+ *   前進量と距離感はごく小さなボーナスに留める。合計は「いま通せるパスの本数」に近くなり、
+ *   横パス・バックパスも1本として数えられる。
+ *
+ *   ボーナスの大きさの目安（基本点 1.0 に対して）:
+ *     ΔX = +30m のロングフィード … +0.30
+ *     ΔX = −10m のバックパス     … −0.10
+ *     w = 1（μ=18m の理想距離）  … +0.10
+ *   つまり「通る横パス1本」は「通らない決定的な縦パス」より常に上に来る。
+ *   本数で並べたうえで、同数なら前向き・適切な距離感のものを採る、という優先順位になる。
+ */
+const passValue = (
+  pc: number,
+  dxProgress: number,
+  distanceWeight: number,
+  params: Params,
+): number => {
+  if (params.valueModel === 'progress') return distanceWeight * pc * dxProgress;
+  const open = laneOpenness(pc, params);
+  return open * (1.0 + dxProgress * 0.01 + distanceWeight * 0.1);
+};
+
+/**
+ * コースの開通度 0〜1。
+ * `passSoftness` が 0 なら仕様どおりの硬いステップ、正なら閾値まわりのシグモイド。
+ */
+export const laneOpenness = (pc: number, params: Params): number => {
+  if (params.passSoftness <= 1e-9) return pc >= params.passThreshold ? 1 : 0;
+  return 1 / (1 + Math.exp(-(pc - params.passThreshold) / params.passSoftness));
+};
+
+/**
+ * 盤面のスコア = Σ value_i
  *   対象：ボール保持側のうち、ボールホルダーを除く10人
  *   w_i  : パス距離のガウス重み exp(-(d_i-μ)²/2σ²)（無効化時は 1）
  *   PC_i : パスの成功確率。パスコース評価が ON ならコース上のボトルネック
@@ -140,7 +188,10 @@ export const evaluateBoard = (
       dx: dxProgress,
       passDistance,
       distanceWeight,
-      value: distanceWeight * pc * dxProgress,
+      value: passValue(pc, dxProgress, distanceWeight, params),
+      /** passOptions モデルでの「通る／通らない」。progress モデルでは常に false */
+      laneOpen: params.valueModel === 'passOptions' && pc >= params.passThreshold,
+      laneOpenness: params.valueModel === 'passOptions' ? laneOpenness(pc, params) : 0,
       excluded,
     };
   });

@@ -134,6 +134,17 @@ export type PcMode = 'team' | 'individual';
  */
 export type HolderMode = 'current' | 'averageOutfield';
 
+/**
+ * パス1本の価値をどう測るか。
+ *
+ * - `progress`    … 従来。`w × PC × ΔX`。前進量に比例するので、コースがどれだけ
+ *                   空いていても横パスは 0 点、バックパスはマイナスになる
+ * - `passOptions` … パスコース探索型。PC が閾値を超えていれば「通る」とみなして
+ *                   基本点 1.0 を与え、前進量と距離感はごく小さなボーナスに留める。
+ *                   合計は「いま通せるパスが何本あるか」に近い量（0〜10強）になる
+ */
+export type ValueModel = 'progress' | 'passOptions';
+
 export interface Params {
   /**
    * ボールを保持しているチーム。攻撃時／守備時の切り替えはこれで行う。
@@ -185,6 +196,15 @@ export interface Params {
   opponentUsesVector: boolean;
   /** ΔX がマイナスの寄与を 0 で切り捨てるか */
   clipNegativeProgress: boolean;
+  /** パス1本の価値をどう測るか */
+  valueModel: ValueModel;
+  /** passOptions モデルで「コースが開通している」とみなす PC の閾値 */
+  passThreshold: number;
+  /**
+   * 閾値の柔らかさ。0 なら仕様どおりの硬いステップ（閾値未満は 0、以上は 1）。
+   * 正の値にすると閾値まわりがシグモイドでなめらかになる。
+   */
+  passSoftness: number;
 }
 
 export interface ViewOptions {
@@ -227,8 +247,12 @@ export interface PlayerEvaluation {
   passDistance: number;
   /** パス距離のガウス重み w（重みOFFのときは 1） */
   distanceWeight: number;
-  /** w × PC × ΔX */
+  /** そのパスの価値。算出方法は params.valueModel による */
   value: number;
+  /** passOptions モデルで「コースが開通している」と判定されたか（閾値との単純比較） */
+  laneOpen: boolean;
+  /** コースの開通度 0〜1。硬いステップなら 0 か 1 になる */
+  laneOpenness: number;
   /** ボールホルダーとして総和から除外されたか */
   excluded: boolean;
 }

@@ -3,7 +3,16 @@ import { FORMATIONS, buildLineup, slotPosition } from '../data/formations';
 import type { FormationSlot } from '../data/formations';
 import { positionFit } from '../data/positions';
 import { isSkillValidFor } from '../data/skills';
-import type { Params, Player, PositionId, SceneId, SquadPlayer, TeamId, Vec2 } from '../types';
+import type {
+  Params,
+  Player,
+  PositionId,
+  SceneId,
+  SquadPlayer,
+  TeamId,
+  ValueModel,
+  Vec2,
+} from '../types';
 import { assignByScore } from './assign';
 import { analyzeDensity, spaceExploitation } from './density';
 import type { DensityReport } from './density';
@@ -31,10 +40,31 @@ import { averageOverHolders } from './holderAverage';
 export type RankMode = 'balance' | 'attack' | 'defense';
 
 export const RANK_MODES: { id: RankMode; label: string; desc: string }[] = [
-  { id: 'balance', label: 'バランス', desc: '自分の前進 − 相手に許す前進。総合的に強い形。' },
-  { id: 'attack', label: '攻撃重視', desc: '自分がボールを持ったときに最も前進できる形。' },
-  { id: 'defense', label: '守備重視', desc: '相手に最も前進を許さない形。' },
+  { id: 'balance', label: 'バランス', desc: '自分のスコア − 相手に許すスコア。総合的に強い形。' },
+  { id: 'attack', label: '攻撃重視', desc: '自分がボールを持ったときのスコアが最も高い形。' },
+  { id: 'defense', label: '守備重視', desc: '相手にスコアを与えない形。' },
 ];
+
+/**
+ * 評価モデル。ランキング基準（RankMode）とは独立した軸で、
+ * 「パス1本の価値をどう測るか」を選ぶ。同じ基準のまま2つのモデルを見比べられる。
+ */
+export const VALUE_MODELS: { id: ValueModel; label: string; desc: string }[] = [
+  {
+    id: 'progress',
+    label: '前進量重視',
+    desc: 'w × PC × ΔX。どれだけ前に運べるかを直接測る。縦に速い形が上位に来る。',
+  },
+  {
+    id: 'passOptions',
+    label: 'パスコース重視',
+    desc: 'PC が閾値を超えたコースを1本と数える。横パス・バックパスも逃げ道として評価され、保持が安定する形が上位に来る。',
+  },
+];
+
+/** そのモデルでのスコアの単位（画面の表示に使う） */
+export const scoreUnit = (model: ValueModel): string =>
+  model === 'passOptions' ? '本' : 'm';
 
 export interface SlotAssignment {
   slot: FormationSlot;
@@ -82,6 +112,8 @@ export interface RecommendInput {
   scene: SceneId;
   homeLine: number;
   rankMode: RankMode;
+  /** パス1本の価値をどう測るか。省略時は従来の前進量モデル */
+  valueModel?: ValueModel;
 }
 
 export interface RecommendResult {
@@ -89,6 +121,8 @@ export interface RecommendResult {
   best: FormationRecommendation;
   /** 相手配置の密度解析 */
   density: DensityReport;
+  /** 実際に使った評価モデル */
+  valueModel: ValueModel;
   /** 探索に使った盤面評価の回数（性能の目安） */
   evaluations: number;
   elapsedMs: number;
@@ -127,6 +161,7 @@ const paramsFor = (
   homeStyle: input.homeStyle,
   awayStyle: input.opponentStyle,
   holderMode: 'averageOutfield',
+  valueModel: input.valueModel ?? FIXED_PARAMS.valueModel,
 });
 
 /**
@@ -149,33 +184,43 @@ const tacticalValue = (attack: number, defense: number, mode: RankMode): number 
 };
 
 /**
- * 本職から外れた起用に対する減点。
+ * 目的関数の重み。**戦術スコアのスケールが評価モデルで大きく違う**ので、
+ * モデルごとに持つ。
  *
- * 盤面評価は「その位置でどう振る舞うか」しか見ないので、これが無いと
- * 「本職CBがベンチにいるのにサイドバックをCBに置く」ような、戦術スコアだけは
- * 少し高いが現実には筋の悪い布陣に流れる。1人あたり最大 FIT_PENALTY 点、11人ぶんを合算して引く。
- * 本職（適性100）だけで組めば減点は 0。「兼任可」の 62 を1枚入れると約 3.0 点の減点になり、
- * それを上回る戦術的な利得がなければ採用されない。
+ *   progress    … 期待前進値。1形あたり概ね −3 〜 +4（起点平均後）
+ *   passOptions … 通るパスの本数。1形あたり概ね 3 〜 9
+ *
+ * `fitPenalty` は本職から外れた起用への減点。盤面評価は「その位置でどう振る舞うか」
+ * しか見ないので、これが無いと「本職CBがベンチにいるのにサイドバックをCBに置く」ような、
+ * 戦術スコアだけは少し高いが現実には筋の悪い布陣に流れる。1人あたり最大この値、
+ * 11人ぶんを合算して引く。「兼任可」の適性62 を1枚入れると重みの約38%の減点になる。
+ *
+ * `density` は相手の空きゾーンを突けていることへの加点。PC が連続的な密度をすでに
+ * 見ているので、戦術スコアがほぼ互角のときのタイブレーカーとして働く強さに留める。
  */
-const FIT_PENALTY = 8;
+const WEIGHTS: Record<ValueModel, { fitPenalty: number; density: number }> = {
+  progress: { fitPenalty: 8, density: 3 },
+  // 本数スケールでは「兼任可1枚 = 0.19本ぶん」「空きの活用 満点 = 0.5本ぶん」。
+  // 戦術的な差（1本）の方が常に大きく、適性と密度はあくまで同点の捌き方になる。
+  passOptions: { fitPenalty: 0.5, density: 0.5 },
+};
+
+const weightsFor = (input: RecommendInput) =>
+  WEIGHTS[input.valueModel ?? FIXED_PARAMS.valueModel];
+
 /** 探索でそのスロットの候補にできる最低適性（これ未満は専門外として除外） */
 const MIN_CANDIDATE_FIT = 50;
 
-const fitPenaltyOf = (slots: FormationSlot[], picks: SquadPlayer[]): number =>
+const fitPenaltyOf = (
+  slots: FormationSlot[],
+  picks: SquadPlayer[],
+  weight: number,
+): number =>
   slots.reduce(
     (sum, slot, i) =>
-      sum + (FIT_PENALTY * (100 - Math.min(100, positionFit(picks[i].position, slot.position)))) / 100,
+      sum + (weight * (100 - Math.min(100, positionFit(picks[i].position, slot.position)))) / 100,
     0,
   );
-
-/**
- * 密度解析の加点。
- *
- * PC は連続的な密度をすでに見ているので、ここは強くしすぎない。
- * 「戦術スコアがほぼ互角のとき、相手が空けているゾーンを突けている形を採る」
- * ためのタイブレーカーとして働く重みにしてある。
- */
-const DENSITY_WEIGHT = 3;
 
 const objective = (
   attack: number,
@@ -183,7 +228,8 @@ const objective = (
   mode: RankMode,
   penalty: number,
   space: number,
-): number => tacticalValue(attack, defense, mode) - penalty + DENSITY_WEIGHT * space;
+  densityWeight: number,
+): number => tacticalValue(attack, defense, mode) - penalty + densityWeight * space;
 
 /* ------------------------------------------------------------------ *
  * 布陣の組み立て
@@ -232,6 +278,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
 
   const away = input.opponentPlayers;
   const density = analyzeDensity(away);
+  const weights = weightsFor(input);
 
   const raw = FORMATIONS.map((formation) => {
     const slots = formation.slots;
@@ -249,8 +296,9 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
       scored.attack,
       scored.defense,
       input.rankMode,
-      fitPenaltyOf(slots, picks),
+      fitPenaltyOf(slots, picks, weights.fitPenalty),
       spaceExploitation(initialLineup, density),
+      weights.density,
     );
 
     // 3. ベンチとの入れ替えで改善を試す（first-improvement の山登り）
@@ -278,8 +326,9 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
             s.attack,
             s.defense,
             input.rankMode,
-            fitPenaltyOf(slots, trial),
+            fitPenaltyOf(slots, trial, weights.fitPenalty),
             spaceExploitation(trialLineup, density),
+            weights.density,
           );
           if (v > best + 1e-9) {
             picks = trial;
@@ -297,7 +346,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     const final = scoreBoard([...lineup, ...away], input);
     evaluations += 2;
     const spaceScore = spaceExploitation(lineup, density);
-    const fitPenalty = fitPenaltyOf(slots, picks);
+    const fitPenalty = fitPenaltyOf(slots, picks, weights.fitPenalty);
 
     const assignments: SlotAssignment[] = slots.map((slot, i) => ({
       slot,
@@ -317,7 +366,14 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
       fitPenalty,
       spaceScore,
       /** 最終的な採用判断に使う値。戦術スコア − 適性減点 + 密度加点 */
-      score: objective(final.attack, final.defense, input.rankMode, fitPenalty, spaceScore),
+      score: objective(
+        final.attack,
+        final.defense,
+        input.rankMode,
+        fitPenalty,
+        spaceScore,
+        weights.density,
+      ),
       assignments,
       lineup,
       bench: benchOf(picks),
@@ -343,6 +399,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
     rows: sorted,
     best: sorted[0],
     density,
+    valueModel: input.valueModel ?? FIXED_PARAMS.valueModel,
     evaluations,
     elapsedMs: Date.now() - started,
   };

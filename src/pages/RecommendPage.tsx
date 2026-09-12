@@ -8,14 +8,30 @@ import { fitLabel } from '../data/positions';
 import { skillById } from '../data/skills';
 import { SCENES, TEAM_STYLES, styleById } from '../data/styles';
 import type { DensityReport } from '../logic/density';
-import { RANK_MODES, opponentLineup, recommendFormations } from '../logic/recommend';
+import { RANK_MODES, VALUE_MODELS, opponentLineup, recommendFormations, scoreUnit } from '../logic/recommend';
 import type { FormationRecommendation, RankMode, RecommendResult } from '../logic/recommend';
-import type { Player, SceneId, SquadPlayer } from '../types';
+import type { Player, SceneId, SquadPlayer, ValueModel } from '../types';
 
 const ATTACK_COLOR = '#0284c7';
 const DEFENSE_COLOR = '#e11d48';
 
 const fmt = (n: number, d = 1) => (n >= 0 ? '+' : '') + n.toFixed(d);
+
+/** 評価モデルによってスコアの意味が変わるので、見出しも合わせる */
+const labelsFor = (model: ValueModel) =>
+  model === 'passOptions'
+    ? {
+        attack: '自チームのパスコース',
+        defense: '相手のパスコース',
+        unit: scoreUnit(model),
+        note: '通るパスの本数（GK以外の10起点の平均）',
+      }
+    : {
+        attack: '自チームの前進',
+        defense: '相手に許す前進',
+        unit: scoreUnit(model),
+        note: '期待前進値（GK以外の10起点の平均）',
+      };
 
 /** 棒は「最下位との差」。長いほど良い選択と読める向きに揃えている */
 function Bar({ amount, max, color }: { amount: number; max: number; color: string }) {
@@ -50,6 +66,8 @@ export interface BoardContext {
   opponentPlayers: Player[];
   scene: SceneId;
   awayLine: number;
+  /** 提案に使った評価モデル。盤面でも同じ物差しで見られるように持っていく */
+  valueModel: ValueModel;
 }
 
 const HOME_LINE = 0;
@@ -63,6 +81,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
   const [opponentFormation, setOpponentFormation] = useState('4-2-3-1');
   const [scene, setScene] = useState<SceneId>('possession');
   const [rankMode, setRankMode] = useState<RankMode>('balance');
+  const [valueModel, setValueModel] = useState<ValueModel>('progress');
 
   const [result, setResult] = useState<RecommendResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -92,6 +111,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
     opponentPlayers: away,
     scene,
     awayLine: AWAY_LINE,
+    valueModel,
   };
 
   const run = () => {
@@ -109,6 +129,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
             scene,
             homeLine: HOME_LINE,
             rankMode,
+            valueModel,
           }),
         );
       } catch (e) {
@@ -129,6 +150,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
   }
 
   const rows = result?.rows ?? [];
+  const L = labelsFor(result?.valueModel ?? valueModel);
   const attackFloor = rows.length ? Math.min(...rows.map((r) => r.attack)) : 0;
   const defenseFloor = rows.length ? Math.max(...rows.map((r) => r.defense)) : 0;
   const attackSpan = rows.length ? Math.max(...rows.map((r) => r.attack - attackFloor)) : 1;
@@ -179,6 +201,13 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
             hint={RANK_MODES.find((m) => m.id === rankMode)?.desc}
             onChange={setRankMode}
           />
+          <Select<ValueModel>
+            label="評価モデル（試験）"
+            value={valueModel}
+            options={VALUE_MODELS.map((m) => ({ value: m.id, label: m.label }))}
+            hint={VALUE_MODELS.find((m) => m.id === valueModel)?.desc}
+            onChange={setValueModel}
+          />
         </div>
       </Card>
 
@@ -220,11 +249,17 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
         <>
           <DensityCard density={result.density} />
 
-          <BestCard rec={result.best} away={away} ctx={ctx} onOpenBoard={onOpenBoard} />
+          <BestCard
+            rec={result.best}
+            away={away}
+            ctx={ctx}
+            valueModel={result.valueModel}
+            onOpenBoard={onOpenBoard}
+          />
 
           <Card
             title="フォーメーション別の評価"
-            subtitle={`17形すべてで最適な11人を組んでから比較しています（盤面評価 ${result.evaluations} 回 / ${result.elapsedMs}ms）。自チームの前進は大きいほど、相手に許す前進は小さいほど良い。棒は最下位との差なので、長いほど良い選択です。並びは「空きの活用」と適性の減点まで含めた総合順です。`}
+            subtitle={`17形すべてで最適な11人を組んでから比較しています（盤面評価 ${result.evaluations} 回 / ${result.elapsedMs}ms）。${L.attack}は大きいほど、${L.defense}は小さいほど良い（${L.note}）。棒は最下位との差なので、長いほど良い選択です。並びは「空きの活用」と適性の減点まで含めた総合順です。`}
           >
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-[12px]">
@@ -236,7 +271,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                         className="mr-1 inline-block h-2 w-2 rounded-full align-middle"
                         style={{ background: ATTACK_COLOR }}
                       />
-                      自チームの前進
+                      {L.attack}
                     </th>
                     <th className="w-[20%] px-2 py-1.5"></th>
                     <th className="px-2 py-1.5 text-right font-medium">
@@ -244,7 +279,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                         className="mr-1 inline-block h-2 w-2 rounded-full align-middle"
                         style={{ background: DEFENSE_COLOR }}
                       />
-                      相手に許す前進
+                      {L.defense}
                     </th>
                     <th className="w-[20%] px-2 py-1.5"></th>
                     <th className="px-2 py-1.5 text-right font-medium">バランス</th>
@@ -458,13 +493,16 @@ function BestCard({
   rec,
   away,
   ctx,
+  valueModel,
   onOpenBoard,
 }: {
   rec: FormationRecommendation;
   away: ReturnType<typeof opponentLineup>;
   ctx: BoardContext;
+  valueModel: ValueModel;
   onOpenBoard: (rec: FormationRecommendation, ctx: BoardContext) => void;
 }) {
+  const labels = labelsFor(valueModel);
   return (
     <Card
       title={`推奨フォーメーション　${rec.label}`}
@@ -480,8 +518,8 @@ function BestCard({
             awayLabel={`相手 ${ctx.opponentLabel}`}
           />
           <div className="grid grid-cols-3 gap-2">
-            <Stat label="自チームの前進" value={fmt(rec.attack)} color={ATTACK_COLOR} note={`${rec.attackRank}位 / 17`} />
-            <Stat label="相手に許す前進" value={fmt(rec.defense)} color={DEFENSE_COLOR} note={`${rec.defenseRank}位 / 17`} />
+            <Stat label={labels.attack} value={fmt(rec.attack)} color={ATTACK_COLOR} note={`${rec.attackRank}位 / 17`} />
+            <Stat label={labels.defense} value={fmt(rec.defense)} color={DEFENSE_COLOR} note={`${rec.defenseRank}位 / 17`} />
             <Stat label="バランス" value={fmt(rec.balance)} color="#94a3b8" note={`${rec.balanceRank}位 / 17`} />
           </div>
         </div>

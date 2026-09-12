@@ -71,6 +71,8 @@ export default function App() {
         scene: ctx.scene,
         homeStyle: ctx.homeStyle,
         awayStyle: ctx.opponentStyle,
+        // 提案と盤面で物差しを揃える
+        valueModel: ctx.valueModel,
       },
       homeFormation: rec.formationId,
       awayFormation: ctx.opponentFormation,

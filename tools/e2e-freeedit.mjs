@@ -144,6 +144,38 @@ check('「空きの活用」列がある', hasSpace > 0);
 
 await page.screenshot({ path: '/tmp/freeedit.png', fullPage: true });
 
+/* ── 4. 評価モデルを切り替えると結果が変わる ──────────────── */
+/** 推奨フォーメーション名 + ランキング表の並び */
+const bestOf = () =>
+  page.evaluate(() => {
+    const title = [...document.querySelectorAll('*')]
+      .map((el) => el.textContent ?? '')
+      .find((t) => t.startsWith('推奨フォーメーション')) ?? '';
+    // ランキング表は最後の table
+    const tables = [...document.querySelectorAll('table')];
+    const order = tables.length
+      ? [...tables[tables.length - 1].querySelectorAll('tbody tr td:first-child')]
+          .map((td) => td.textContent.trim().replace('推奨', ''))
+          .join(',')
+      : '';
+    return `${title.slice(0, 40)}|${order}`;
+  });
+const beforeSwitch = await bestOf();
+
+// 「評価モデル（試験）」の select を パスコース重視 に変える
+const modelSelect = page.locator('select').last();
+await modelSelect.selectOption({ label: 'パスコース重視' });
+await page.waitForTimeout(200);
+await page.getByRole('button', { name: /最適フォーメーションを提案/ }).click();
+await page.waitForTimeout(6000);
+
+const afterSwitch = await bestOf();
+check('評価モデルを切り替えると提案が変わる', beforeSwitch !== afterSwitch);
+const passHeader = await page.getByText('自チームのパスコース').count();
+check('見出しが「パスコース」表記に変わる', passHeader > 0);
+
+await page.screenshot({ path: '/tmp/passoptions.png', fullPage: true });
+
 check('コンソールエラーなし', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 await browser.close();
