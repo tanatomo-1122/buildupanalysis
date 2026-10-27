@@ -1,6 +1,8 @@
 import { PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import type { PositionId, Player, TeamId } from '../types';
+import { generateFormations } from './generate';
 import { DEFAULT_SKILLS } from './skills';
+import { isAllowedAt } from './zones';
 
 /**
  * フォーメーション（eFootball 表記）
@@ -15,13 +17,37 @@ export interface FormationSlot {
   position: PositionId;
   x: number;
   y: number;
+  /**
+   * 何列目か（1 = 最終ライン、2 = その前 …）。GK は 0。
+   *
+   * eFootball のフォーメーション名は **列ごとの人数**を並べたもの（4-2-3-1 なら
+   * 最終ライン4・ボランチ2・2列目3・前線1）。ポジション名だけでは列は決まらない
+   * （OMF は 4-1-3-2 では RMF/LMF と同じ列、3-3-1-3 では独立した列）ので、
+   * 列は座標リテラルとは別に持つ。値は読み込み時に登録名と x の並び順から復元する。
+   */
+  line: number;
 }
 
 export interface Formation {
+  /** 一意な ID。変種は `<family>@<shape>` の形 */
   id: string;
   label: string;
   desc: string;
   slots: FormationSlot[];
+  /** 元になった基本形の ID（例 '4-4-2'）。基本形自身は自分の ID */
+  family: string;
+  /** 基本形の表示名（例 '4-4-2'） */
+  familyLabel: string;
+  /** タイプ ID（可変スロットのポジションを並べたもの。例 'RWG-CF-LWG'） */
+  typeId: string;
+  /** タイプの表示名（例 'CF+両WG'） */
+  typeLabel: string;
+  /** 前線の構成（例 'CF+両WG'） */
+  frontLabel: string;
+  /** 二列目の構成（例 '2CMF'） */
+  secondLabel: string;
+  /** 左右反転しても同じ形なら一致するキー。一覧の重複まとめに使う */
+  symmetryKey: string;
 }
 
 const s = (number: number, position: PositionId, x: number, y: number): FormationSlot => ({
@@ -29,9 +55,21 @@ const s = (number: number, position: PositionId, x: number, y: number): Formatio
   position,
   x,
   y,
+  line: 0, // 下の assignLines で埋める
 });
 
-export const FORMATIONS: Formation[] = [
+type BaseFormation = Omit<
+  Formation,
+  | 'family'
+  | 'familyLabel'
+  | 'typeId'
+  | 'typeLabel'
+  | 'frontLabel'
+  | 'secondLabel'
+  | 'symmetryKey'
+>;
+
+const BASE_FORMATIONS: BaseFormation[] = [
   {
     id: '4-3-3',
     label: '4-3-3',
@@ -339,6 +377,107 @@ export const FORMATIONS: Formation[] = [
     ],
   },
 ];
+/**
+ * 登録名と x の並び順から各スロットの列番号を復元する。
+ *
+ * 「4-2-3-1」なら x の小さい順に 4人・2人・3人・1人 と切る。
+ * 17形すべてで名前が再現でき、どの形も列どうしが x で重なっていないことを
+ * `tools/proto-naming.ts` で確認済み。
+ */
+const assignLines = (base: BaseFormation): void => {
+  const digits = base.label.split('-').map(Number);
+  const outfield = base.slots.filter((sl) => sl.position !== 'GK').sort((a, b) => a.x - b.x);
+  let i = 0;
+  digits.forEach((n, li) => {
+    for (let k = 0; k < n; k++) {
+      if (outfield[i]) outfield[i].line = li + 1;
+      i++;
+    }
+  });
+};
+for (const b of BASE_FORMATIONS) assignLines(b);
+
+/**
+ * eFootball の命名規則。GK を除いて**列ごとの人数**を並べる。
+ * 列は `FormationSlot.line` が持っているので、数えるだけで名前になる。
+ */
+export const formationName = (slots: FormationSlot[]): string => {
+  const counts = new Map<number, number>();
+  for (const sl of slots) {
+    if (sl.position === 'GK' || sl.line === 0) continue;
+    counts.set(sl.line, (counts.get(sl.line) ?? 0) + 1);
+  }
+  return [...counts.keys()]
+    .sort((a, b) => a - b)
+    .map((k) => counts.get(k))
+    .join('-');
+};
+
+/* ------------------------------------------------------------------ *
+ * フォーメーションの「タイプ」
+ *
+ * 同じ 4-3-3 でも、3トップが
+ *   CF + 両ウイング / ST + 両ウイング / CF + 両ST / 3枚ともST …
+ * のどれなのかで別の戦術になる。フォーメーション名は形を決めきらない。
+ *
+ * どのスロットがどのポジションを取れるかは `zones.ts` が既に持っているので
+ * （R_ATT なら RWG か ST、C5 なら CF か ST、C3 なら OMF か CMF）、
+ * **前線と二列目の組み合わせを総当たりで展開する**だけでタイプが出る。
+ *
+ * ポジションが変われば立ち位置も変わる（ワイドの ST はウイングより内側に絞るし、
+ * CF は ST より前で張る）ので、座標も合わせて動かす。動かした先がそのポジションで
+ * 許されないゾーンなら手前で止める（`legalize`）。
+ * ------------------------------------------------------------------ */
+
+/**
+ * 目標座標まで動かすが、そのポジションで許されない位置なら元の座標側へ引き戻す。
+ *
+ * 丸めてから判定すること。先に判定して後から丸めると 67.96 → 68.0 で
+ * 隣のゾーンへ滑り込む（ゾーンは [x0, x1) の半開区間）。
+ */
+const legalize = (
+  slot: FormationSlot,
+  position: PositionId,
+  tx: number,
+  ty: number,
+): FormationSlot => {
+  for (let t = 1; t >= 0; t -= 0.05) {
+    const x = Math.round((slot.x + (tx - slot.x) * t) * 10) / 10;
+    const y = Math.round((slot.y + (ty - slot.y) * t) * 10) / 10;
+    if (isAllowedAt({ x, y }, 'home', position)) return { ...slot, position, x, y };
+  }
+  return { ...slot, position };
+};
+
+/**
+ * ラインの高さを変える。GK は動かさず、フィールドの10人だけを前後させる。
+ * 動かした先がそのポジションで許されないゾーンなら手前で止める。
+ */
+export const withLineShift = (slots: FormationSlot[], dx: number): FormationSlot[] => {
+  if (dx === 0) return slots;
+  return slots.map((sl) =>
+    sl.position === 'GK' ? sl : legalize(sl, sl.position, sl.x + dx, sl.y),
+  );
+};
+
+/**
+ * 全カタログ。
+ *
+ * 手で書いた17形を展開するのはやめ、**4エリアの人数配分とエリア内の構成から生成**している
+ * （`generate.ts`）。eFootball の名前は 最終ライン / ボランチ / 2列目 / 前線 の人数で
+ * 決まるので、構成を作れば名前は自動的に決まる。手書きの17形は名前と中身が食い違っていた
+ * （例: 旧「4-4-2」は RMF,CMF,CMF,LMF ＝ 規則どおりなら 4-2-2-2）。
+ */
+export const FORMATIONS: Formation[] = generateFormations();
+
+/** 名前ごとの代表（＝その名前で最初に出てくる構成） */
+export const FORMATION_FAMILIES: Formation[] = FORMATIONS.filter(
+  (f, _i, arr) => arr.find((x) => x.family === f.family) === f,
+);
+
+/** その基本形のタイプをすべて返す */
+export const typesOf = (family: string): Formation[] =>
+  FORMATIONS.filter((f) => f.family === family);
 
 export const formationById = (id: string): Formation =>
   FORMATIONS.find((f) => f.id === id) ?? FORMATIONS[0];

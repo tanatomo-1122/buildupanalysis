@@ -137,8 +137,8 @@ await page.waitForTimeout(4000);
 
 const hasDensity = await page.getByText('相手配置の密度解析').count();
 check('密度解析カードが出る', hasDensity > 0);
-const hasBest = await page.getByText(/推奨フォーメーション/).count();
-check('推奨フォーメーションが出る', hasBest > 0);
+const hasBest = await page.getByText(/攻撃時の詳細/).count();
+check('推奨フォーメーションの詳細が出る', hasBest > 0);
 const hasSpace = await page.getByText('空きの活用').count();
 check('「空きの活用」列がある', hasSpace > 0);
 
@@ -163,7 +163,8 @@ const bestOf = () =>
 const beforeSwitch = await bestOf();
 
 // 「評価モデル（試験）」の select を パスコース重視 に変える
-const modelSelect = page.locator('select').last();
+const selects = page.locator('select');
+const modelSelect = selects.nth((await selects.count()) - 1);
 await modelSelect.selectOption({ label: 'パスコース重視' });
 await page.waitForTimeout(200);
 await page.getByRole('button', { name: /最適フォーメーションを提案/ }).click();
@@ -175,6 +176,45 @@ const passHeader = await page.getByText('自チームのパスコース').count(
 check('見出しが「パスコース」表記に変わる', passHeader > 0);
 
 await page.screenshot({ path: '/tmp/passoptions.png', fullPage: true });
+
+/* ── 5. 一覧の表示件数の切り替え ───────────────────────── */
+const rowCount = () =>
+  page.evaluate(() => {
+    const tables = [...document.querySelectorAll('table')];
+    return tables.length ? tables[tables.length - 1].querySelectorAll('tbody tr').length : 0;
+  });
+
+const topN = await rowCount();
+check('既定では一覧が上位だけに絞られている', topN > 0 && topN <= 10, `${topN}行`);
+
+await page.getByRole('button', { name: '基本形ごと' }).click();
+await page.waitForTimeout(300);
+const famN = await rowCount();
+check('「名前ごと」で1行ずつになる', famN >= 30 && famN <= 70, `${famN}行`);
+
+await page.getByRole('button', { name: 'すべて' }).click();
+await page.waitForTimeout(500);
+const allN = await rowCount();
+check('「すべて」で全行が出る', allN > 50, `${allN}行`);
+
+await page.getByRole('button', { name: /^上位/ }).click();
+await page.waitForTimeout(300);
+check('「上位」に戻せる', (await rowCount()) === topN);
+
+// タイプのバッジが出ているか（「4CB／…」のような構成名）
+const badge = await page.getByText(/／/).count();
+check('タイプ名が一覧に出ている', badge > 0);
+
+// 攻撃時 / 守備時
+check('攻撃時・守備時カードが出る', (await page.getByText('攻撃時 / 守備時フォーメーション').count()) > 0);
+await page.getByRole('button', { name: '守備時' }).click();
+await page.waitForTimeout(400);
+check('守備時の一覧に切り替わる', (await page.getByText(/守備時の詳細/).count()) > 0);
+await page.getByRole('button', { name: '攻撃時' }).click();
+await page.waitForTimeout(400);
+check('攻撃時に戻せる', (await page.getByText(/攻撃時の詳細/).count()) > 0);
+
+await page.screenshot({ path: '/tmp/variants.png', fullPage: true });
 
 check('コンソールエラーなし', errors.length === 0, errors.slice(0, 3).join(' | '));
 

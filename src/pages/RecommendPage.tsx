@@ -3,13 +3,13 @@ import { usablePlayers } from '../api/squad';
 import FreeEditPitch from '../components/FreeEditPitch';
 import LineupPitch from '../components/LineupPitch';
 import { Button, Card, Notice, Select } from '../components/ui';
-import { FORMATIONS } from '../data/formations';
+import { FORMATIONS, FORMATION_FAMILIES, formationById } from '../data/formations';
 import { fitLabel } from '../data/positions';
 import { skillById } from '../data/skills';
 import { SCENES, TEAM_STYLES, styleById } from '../data/styles';
 import type { DensityReport } from '../logic/density';
-import { RANK_MODES, VALUE_MODELS, opponentLineup, recommendFormations, scoreUnit } from '../logic/recommend';
-import type { FormationRecommendation, RankMode, RecommendResult } from '../logic/recommend';
+import { VALUE_MODELS, opponentLineup, recommendPhasePlan, scoreUnit } from '../logic/recommend';
+import type { FormationRecommendation, PhasePlan } from '../logic/recommend';
 import type { Player, SceneId, SquadPlayer, ValueModel } from '../types';
 
 const ATTACK_COLOR = '#0284c7';
@@ -73,17 +73,33 @@ export interface BoardContext {
 const HOME_LINE = 0;
 const AWAY_LINE = 8;
 
+/** 一覧の既定の表示件数 */
+const TOP_N = 10;
+
+type ListMode = 'top' | 'family' | 'all';
+
+const LIST_MODES: { id: ListMode; label: string }[] = [
+  { id: 'top', label: `上位${TOP_N}` },
+  { id: 'family', label: '基本形ごと' },
+  { id: 'all', label: 'すべて' },
+];
+
 export default function RecommendPage({ squad, onOpenBoard }: Props) {
   const roster = useMemo(() => usablePlayers(squad), [squad]);
 
   const [homeStyle, setHomeStyle] = useState('possession');
   const [opponentStyle, setOpponentStyle] = useState('shortCounter');
-  const [opponentFormation, setOpponentFormation] = useState('4-2-3-1');
+  /** 相手の形は「数値（名前）」→「ポジションパターン」の2段で選ぶ */
+  const [opponentName, setOpponentName] = useState('4-2-3-1');
+  const [opponentFormation, setOpponentFormation] = useState(
+    () => FORMATIONS.find((f) => f.family === '4-2-3-1')!.id,
+  );
   const [scene, setScene] = useState<SceneId>('possession');
-  const [rankMode, setRankMode] = useState<RankMode>('balance');
+  /** 一覧でどちらの局面を見るか */
+  const [phase, setPhase] = useState<'attack' | 'defense'>('attack');
   const [valueModel, setValueModel] = useState<ValueModel>('progress');
 
-  const [result, setResult] = useState<RecommendResult | null>(null);
+  const [result, setResult] = useState<PhasePlan | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +110,8 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
   const [away, setAway] = useState<Player[]>(() => opponentLineup('4-2-3-1', AWAY_LINE));
   const [edited, setEdited] = useState(false);
   const [showZones, setShowZones] = useState(true);
+  /** 一覧の表示件数。102形あるので既定では上位だけ出す */
+  const [listMode, setListMode] = useState<ListMode>('top');
 
   // フォーメーションを選び直したら、その形へ戻す（編集内容は破棄）
   useEffect(() => {
@@ -101,7 +119,10 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
     setEdited(false);
   }, [opponentFormation]);
 
-  const opponentLabel = edited ? `${opponentFormation}（編集済）` : opponentFormation;
+  const opponentBase = formationById(opponentFormation);
+  const opponentLabel = `${opponentBase.familyLabel}（${opponentBase.typeLabel}）${
+    edited ? ' ・編集済' : ''
+  }`;
 
   const ctx: BoardContext = {
     homeStyle,
@@ -121,14 +142,13 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
     setTimeout(() => {
       try {
         setResult(
-          recommendFormations({
+          recommendPhasePlan({
             squad: roster,
             homeStyle,
             opponentPlayers: away,
             opponentStyle,
             scene,
             homeLine: HOME_LINE,
-            rankMode,
             valueModel,
           }),
         );
@@ -149,12 +169,25 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
     );
   }
 
-  const rows = result?.rows ?? [];
+  const allRows = (phase === 'attack' ? result?.attackRows : result?.defenseRows) ?? [];
+  // 左右反転しただけの形は同じ扱いにして、良い方だけ残す
+  // （相手が左右対称だと同点で並ぶため。相手が偏っていればスコアが割れるので良い方が勝つ）
+  const deduped = allRows.filter(
+    (r, _i, arr) => arr.find((x) => x.symmetryKey === r.symmetryKey) === r,
+  );
+  // 一覧は既定で上位のみ。「基本形ごと」は各基本形のいちばん良いタイプだけを1行にまとめる
+  const rows =
+    listMode === 'all'
+      ? deduped
+      : listMode === 'family'
+        ? deduped.filter((r, _i, arr) => arr.find((x) => x.family === r.family) === r)
+        : deduped.slice(0, TOP_N);
   const L = labelsFor(result?.valueModel ?? valueModel);
-  const attackFloor = rows.length ? Math.min(...rows.map((r) => r.attack)) : 0;
-  const defenseFloor = rows.length ? Math.max(...rows.map((r) => r.defense)) : 0;
-  const attackSpan = rows.length ? Math.max(...rows.map((r) => r.attack - attackFloor)) : 1;
-  const defenseSpan = rows.length ? Math.max(...rows.map((r) => defenseFloor - r.defense)) : 1;
+  // 棒の目盛りは常にカタログ全体を基準にする（表示件数を変えても長さがぶれないように）
+  const attackFloor = deduped.length ? Math.min(...deduped.map((r) => r.attack)) : 0;
+  const defenseFloor = deduped.length ? Math.max(...deduped.map((r) => r.defense)) : 0;
+  const attackSpan = deduped.length ? Math.max(...deduped.map((r) => r.attack - attackFloor)) : 1;
+  const defenseSpan = deduped.length ? Math.max(...deduped.map((r) => defenseFloor - r.defense)) : 1;
 
   return (
     <div className="space-y-4">
@@ -177,8 +210,24 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
           />
           <Select
             label="相手のフォーメーション"
+            value={opponentName}
+            options={FORMATION_FAMILIES.map((f) => ({ value: f.family, label: f.familyLabel }))}
+            hint="まず数値を選びます"
+            onChange={(name) => {
+              setOpponentName(name);
+              const first = FORMATIONS.find((f) => f.family === name);
+              if (first) setOpponentFormation(first.id);
+            }}
+          />
+          <Select
+            label="相手のポジションパターン"
             value={opponentFormation}
-            options={FORMATIONS.map((f) => ({ value: f.id, label: f.label }))}
+            options={FORMATIONS.filter(
+              (f, _i, arr) =>
+                f.family === opponentName &&
+                arr.find((x) => x.symmetryKey === f.symmetryKey) === f,
+            ).map((f) => ({ value: f.id, label: f.typeLabel }))}
+            hint="同じ数値でも中身で別の形になります"
             onChange={setOpponentFormation}
           />
           <Select
@@ -193,13 +242,6 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
             value={scene}
             options={SCENES.map((s) => ({ value: s.id, label: s.label }))}
             onChange={setScene}
-          />
-          <Select<RankMode>
-            label="何を基準に選ぶか"
-            value={rankMode}
-            options={RANK_MODES.map((m) => ({ value: m.id, label: m.label }))}
-            hint={RANK_MODES.find((m) => m.id === rankMode)?.desc}
-            onChange={setRankMode}
           />
           <Select<ValueModel>
             label="評価モデル（試験）"
@@ -249,17 +291,46 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
         <>
           <DensityCard density={result.density} />
 
+          <PhaseCard plan={result} />
+
           <BestCard
-            rec={result.best}
+            rec={phase === 'attack' ? result.attack : result.defense}
             away={away}
             ctx={ctx}
             valueModel={result.valueModel}
+            phase={phase}
             onOpenBoard={onOpenBoard}
           />
 
           <Card
             title="フォーメーション別の評価"
-            subtitle={`17形すべてで最適な11人を組んでから比較しています（盤面評価 ${result.evaluations} 回 / ${result.elapsedMs}ms）。${L.attack}は大きいほど、${L.defense}は小さいほど良い（${L.note}）。棒は最下位との差なので、長いほど良い選択です。並びは「空きの活用」と適性の減点まで含めた総合順です。`}
+            subtitle={`基本形 ${FORMATION_FAMILIES.length} × 前線・二列目のポジション構成 = ${allRows.length} 通りから探しています（左右反転しただけの形はまとめて ${deduped.length} 種として表示）。上位候補は守備ラインの上下（±7m）も試しています（盤面評価 ${result.evaluations} 回 / ${result.elapsedMs}ms）。${L.attack}は大きいほど、${L.defense}は小さいほど良い（${L.note}）。棒は全体の最下位との差なので、長いほど良い選択です。並びは「空きの活用」と適性の減点まで含めた総合順です。`}
+            actions={
+              <div className="flex gap-1">
+                <Button
+                  tone={phase === 'attack' ? 'primary' : undefined}
+                  onClick={() => setPhase('attack')}
+                >
+                  攻撃時
+                </Button>
+                <Button
+                  tone={phase === 'defense' ? 'primary' : undefined}
+                  onClick={() => setPhase('defense')}
+                >
+                  守備時
+                </Button>
+                <span className="mx-1 w-px bg-edge" />
+                {LIST_MODES.map((m) => (
+                  <Button
+                    key={m.id}
+                    tone={listMode === m.id ? 'primary' : undefined}
+                    onClick={() => setListMode(m.id)}
+                  >
+                    {m.label}
+                  </Button>
+                ))}
+              </div>
+            }
           >
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-[12px]">
@@ -291,7 +362,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                 </thead>
                 <tbody>
                   {rows.map((r) => {
-                    const best = r.formationId === result.best.formationId;
+                    const best = r.formationId === (phase === 'attack' ? result.attack : result.defense).formationId;
                     return (
                       <tr
                         key={r.formationId}
@@ -299,7 +370,21 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                         className={`border-t border-edge/60 ${best ? 'bg-sky-500/10' : ''}`}
                       >
                         <td className="whitespace-nowrap px-2 py-1.5">
-                          <span className="font-mono font-semibold text-slate-200">{r.label}</span>
+                          <span className="font-mono font-semibold text-slate-200">
+                            {r.familyLabel}
+                          </span>
+                          <span className="ml-1.5 rounded bg-edge px-1.5 py-0.5 text-[10px] text-slate-300">
+                            {r.typeLabel}
+                          </span>
+                          {r.lineShift !== 0 && (
+                            <span
+                              className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-200"
+                              title="守備ラインの上下。GK を除く10人を前後させています"
+                            >
+                              ライン{r.lineShift > 0 ? '+' : ''}
+                              {r.lineShift}m
+                            </span>
+                          )}
                           {best && (
                             <span className="ml-1.5 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-200">
                               推奨
@@ -489,23 +574,101 @@ function DensityCard({ density }: { density: DensityReport }) {
   );
 }
 
+/** 攻撃時 / 守備時の2形と、11人がどこへ動くかを並べて出す */
+function PhaseCard({ plan }: { plan: PhasePlan }) {
+  const moved = plan.moves.filter((m) => m.attack.position !== m.defense.position);
+  return (
+    <Card
+      title="攻撃時 / 守備時フォーメーション"
+      subtitle={`同じ11人のまま形だけを切り替えます（${plan.evaluations} 回評価 / ${plan.elapsedMs}ms）。eFootball のエディットで そのまま設定できる形です。`}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {([
+          { key: 'attack', label: '攻撃時', rec: plan.attack, color: ATTACK_COLOR },
+          { key: 'defense', label: '守備時', rec: plan.defense, color: DEFENSE_COLOR },
+        ] as const).map((p) => (
+          <div key={p.key} className="rounded-md border border-edge bg-panel/50 p-3">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">{p.label}</span>
+            </div>
+            <div className="mt-1 font-mono text-[20px] font-bold text-slate-100">
+              {p.rec.familyLabel}
+            </div>
+            <div className="text-[12px] text-slate-300">{p.rec.typeLabel}</div>
+            {p.rec.lineShift !== 0 && (
+              <div className="mt-1 text-[11px] text-amber-200">
+                守備ライン {p.rec.lineShift > 0 ? '+' : ''}
+                {p.rec.lineShift}m
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-300">
+        {moved.length === 0
+          ? '攻守で配置を変えない形が最良でした。同じ形のまま戦えます。'
+          : `攻守の切り替えで ${moved.length} 人がポジションを変えます。`}
+      </p>
+      {moved.length > 0 && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5 text-left font-medium">選手</th>
+                <th className="px-2 py-1.5 text-left font-medium">本職</th>
+                <th className="px-2 py-1.5 text-left font-medium">攻撃時</th>
+                <th className="px-2 py-1.5 text-left font-medium">守備時</th>
+                <th className="px-2 py-1.5 text-right font-medium">下がる距離</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moved.map((m) => (
+                <tr key={m.player.id} className="border-t border-edge/60">
+                  <td className="px-2 py-1.5 text-slate-200">{m.player.name}</td>
+                  <td className="px-2 py-1.5 font-mono text-slate-500">{m.player.position}</td>
+                  <td className="px-2 py-1.5 font-mono font-semibold text-sky-200">
+                    {m.attack.position}
+                  </td>
+                  <td className="px-2 py-1.5 font-mono font-semibold text-rose-200">
+                    {m.defense.position}
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-400">
+                    {m.dropBack > 0 ? '↓' : '↑'}
+                    {Math.abs(m.dropBack).toFixed(0)}m
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function BestCard({
   rec,
   away,
   ctx,
   valueModel,
+  phase,
   onOpenBoard,
 }: {
   rec: FormationRecommendation;
   away: ReturnType<typeof opponentLineup>;
   ctx: BoardContext;
   valueModel: ValueModel;
+  phase: 'attack' | 'defense';
   onOpenBoard: (rec: FormationRecommendation, ctx: BoardContext) => void;
 }) {
   const labels = labelsFor(valueModel);
   return (
     <Card
-      title={`推奨フォーメーション　${rec.label}`}
+      title={`${phase === 'attack' ? '攻撃時' : '守備時'}の詳細　${rec.familyLabel}（${rec.typeLabel}）${
+        rec.lineShift === 0 ? '' : `　ライン${rec.lineShift > 0 ? '+' : ''}${rec.lineShift}m`
+      }`}
       subtitle={rec.desc}
       actions={<Button tone="primary" onClick={() => onOpenBoard(rec, ctx)}>盤面で見る</Button>}
     >
@@ -518,9 +681,9 @@ function BestCard({
             awayLabel={`相手 ${ctx.opponentLabel}`}
           />
           <div className="grid grid-cols-3 gap-2">
-            <Stat label={labels.attack} value={fmt(rec.attack)} color={ATTACK_COLOR} note={`${rec.attackRank}位 / 17`} />
-            <Stat label={labels.defense} value={fmt(rec.defense)} color={DEFENSE_COLOR} note={`${rec.defenseRank}位 / 17`} />
-            <Stat label="バランス" value={fmt(rec.balance)} color="#94a3b8" note={`${rec.balanceRank}位 / 17`} />
+            <Stat label={labels.attack} value={fmt(rec.attack)} color={ATTACK_COLOR} note={`${rec.attackRank}位 / ${FORMATIONS.length}`} />
+            <Stat label={labels.defense} value={fmt(rec.defense)} color={DEFENSE_COLOR} note={`${rec.defenseRank}位 / ${FORMATIONS.length}`} />
+            <Stat label="バランス" value={fmt(rec.balance)} color="#94a3b8" note={`${rec.balanceRank}位 / ${FORMATIONS.length}`} />
           </div>
         </div>
 

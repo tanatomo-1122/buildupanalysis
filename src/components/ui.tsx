@@ -108,12 +108,16 @@ export function Select<T extends string>({
   label,
   value,
   options,
+  groups,
   hint,
   onChange,
 }: {
   label?: string;
   value: T;
-  options: { value: T; label: string }[];
+  /** 平坦な選択肢。groups を使うときは省略できる */
+  options?: { value: T; label: string }[];
+  /** 見出し付きの選択肢。項目数が多いときはこちら */
+  groups?: { label: string; options: { value: T; label: string }[] }[];
   hint?: string;
   onChange: (v: T) => void;
 }) {
@@ -121,11 +125,21 @@ export function Select<T extends string>({
     <label className="block">
       {label && <span className="mb-1 block text-[13px] text-slate-200">{label}</span>}
       <select className="w-full" value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
+        {groups
+          ? groups.map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))
+          : (options ?? []).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
       </select>
       {hint && <p className="mt-1 text-[11px] leading-snug text-slate-500">{hint}</p>}
     </label>

@@ -1,5 +1,5 @@
 import { POSITION_GROUP } from '../constants';
-import { FORMATIONS } from '../data/formations';
+import { FORMATIONS, FORMATION_FAMILIES, formationById } from '../data/formations';
 import { isSkillValidFor, skillById, skillOptions } from '../data/skills';
 import { SCENES, STYLE_PHASE_LABEL, TEAM_STYLES, styleById, stylePhaseKey } from '../data/styles';
 import type { Params, Player, PositionId, SceneId, TeamId, ViewOptions } from '../types';
@@ -104,14 +104,33 @@ function FormationBlock({
         <TeamDot team={team} />
         {TEAM_LABEL[team]}
       </div>
+      {/* 数値（名前）→ ポジションパターン の2段で選ぶ */}
       <select
         className="w-full"
+        value={formationById(formationId).family}
+        onChange={(e) => {
+          const first = FORMATIONS.find((f) => f.family === e.target.value);
+          if (first) onFormation(team, first.id, line);
+        }}
+      >
+        {FORMATION_FAMILIES.map((fam) => (
+          <option key={fam.family} value={fam.family}>
+            {fam.familyLabel}
+          </option>
+        ))}
+      </select>
+      <select
+        className="mt-1.5 w-full"
         value={formationId}
         onChange={(e) => onFormation(team, e.target.value, line)}
       >
-        {FORMATIONS.map((f) => (
+        {FORMATIONS.filter(
+          (f, _i, arr) =>
+            f.family === formationById(formationId).family &&
+            arr.find((x) => x.symmetryKey === f.symmetryKey) === f,
+        ).map((f) => (
           <option key={f.id} value={f.id}>
-            {f.label}
+            {f.typeLabel}
           </option>
         ))}
       </select>
