@@ -3,7 +3,7 @@ import type { Arrival, Evaluation, Params, Player, PlayerEvaluation, TeamId, Vec
 import { interceptFactor, loftAmount, segmentsFor } from './passLane';
 import { passDistanceWeight } from './passWeight';
 import { pcForArrival } from './pitchControl';
-import { activeSkill, arrivalOf, dist, findHolder } from './vectors';
+import { arrivalOf, dist, findHolder, heldSkill, isSkillActive } from './vectors';
 
 /**
  * 全選手の「評価に使う座標」を求める。
@@ -177,7 +177,10 @@ export const evaluateBoard = (
       playerId: p.id,
       number: p.number,
       position: p.position,
-      skillLabel: activeSkill(p, params).label,
+      // 持っている特性を出しつつ、そのポジションで発動しないものには注記を付ける
+      skillLabel: isSkillActive(p, params)
+        ? heldSkill(p, params).label
+        : `${heldSkill(p, params).label}（不適用）`,
       from: { ...p.pos },
       to,
       pc,

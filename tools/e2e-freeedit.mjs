@@ -36,7 +36,42 @@ await page.reload({ waitUntil: 'networkidle' });
 
 // 選手登録タブを一度開いて 23 名を読み込ませる
 await page.getByRole('button', { name: '選手登録' }).click();
-await page.waitForTimeout(1200);
+await page.waitForTimeout(1500);
+
+/* ── 適性ポジションの登録 ─────────────────────────────── */
+const subHeader = await page.getByText(/適性ポジション/).count();
+check('適性ポジションの列が出る', subHeader > 0);
+
+// 先頭のフィールドプレーヤー（GK 以外）の行で2つ選ぶ
+const chips = page.locator('tbody tr').nth(3).locator('button');
+const chipCount = await chips.count();
+check('適性ポジションの選択肢が出る', chipCount > 0, `${chipCount}個`);
+await chips.nth(0).click();
+await chips.nth(1).click();
+await page.waitForTimeout(200);
+const selected = await page
+  .locator('tbody tr')
+  .nth(3)
+  .locator('button.border-sky-500\\/60')
+  .count();
+check('適性ポジションが2つ選択される', selected === 2, `${selected}個`);
+
+// 上限4つまで選び、5つ目は押せなくなること
+await chips.nth(2).click();
+await chips.nth(3).click();
+await page.waitForTimeout(200);
+const capped = await page
+  .locator('tbody tr')
+  .nth(3)
+  .locator('button.border-sky-500\\/60')
+  .count();
+check('適性ポジションを4つ選べる', capped === 4, `${capped}個`);
+check('5つ目は押せない（上限4）', await chips.nth(4).isDisabled());
+
+// 1つ外せばまた選べる
+await chips.nth(0).click();
+await page.waitForTimeout(200);
+check('外すと上限が空く', !(await chips.nth(4).isDisabled()));
 
 /* ── 戦術提案タブ → フリーエディット ─────────────────── */
 await page.getByRole('button', { name: '戦術提案' }).click();

@@ -1,5 +1,5 @@
 import { PITCH_CENTER_Y, PITCH_LENGTH, PITCH_WIDTH, attackDir, targetGoal } from '../constants';
-import { skillById } from '../data/skills';
+import { NO_SKILL_ID, isSkillValidFor, skillById } from '../data/skills';
 import { styleById, stylePhaseKey } from '../data/styles';
 import type { Params, Player, SkillDef, Vec2, VectorCoeff } from '../types';
 
@@ -53,12 +53,41 @@ export const coeffToVector = (
 };
 
 /**
- * その局面でこの選手に発動している特性を返す。
+ * その局面でこの選手が持っている特性（発動の可否は見ない）。
  * ボールを保持している側は攻撃時特性、非保持側は守備時特性。
+ */
+export const heldSkill = (player: Player, params: Params): SkillDef => {
+  const attacking = player.team === params.possessionTeam;
+  return skillById(attacking ? player.attackSkill : player.defenseSkill);
+};
+
+/**
+ * その局面で**実際に発動している**特性を返す。
+ *
+ * **判定はスタイル側から見る**（ユーザー確認済み）。
+ * 各プレースタイルには適用されるポジションが決まっていて、
+ * その一覧に入っているポジションに就いていれば適用される。
+ * メインポジションか適性ポジションかは関係ない。
+ *
+ *   プレーメイカー（CMF, DMF） … メイン CMF の選手を DMF で使っても適用される
+ *   ラインブレイカー（CF）      … CF 専用。CB で使っても裏抜けの動きは出ない
+ *
+ * 選ぶ段階ではメインポジションで選べるスタイルに限られる（`skillOptions`）が、
+ * 効くかどうかは就いたポジション次第。`player.position` は
+ * **いま就いているスロットのポジション**なので、それで引く。
  */
 export const activeSkill = (player: Player, params: Params): SkillDef => {
   const attacking = player.team === params.possessionTeam;
-  return skillById(attacking ? player.attackSkill : player.defenseSkill);
+  const held = heldSkill(player, params);
+  const phase = attacking ? 'attack' : 'defense';
+  return isSkillValidFor(player.position, phase, held.id) ? held : skillById(NO_SKILL_ID);
+};
+
+/** その特性がいまのポジションで発動しているか */
+export const isSkillActive = (player: Player, params: Params): boolean => {
+  const attacking = player.team === params.possessionTeam;
+  const held = heldSkill(player, params);
+  return held.id === NO_SKILL_ID || isSkillValidFor(player.position, attacking ? 'attack' : 'defense', held.id);
 };
 
 /** その局面でこのチームに適用されるスタイル列 */

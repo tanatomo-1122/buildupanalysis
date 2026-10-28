@@ -25,6 +25,7 @@ create table if not exists public.squad_players (
   slot_index     smallint not null,          -- 0〜22。並び順の保持用
   name           text not null,
   position       text not null,              -- GK/CB/RSB/LSB/DMF/CMF/RMF/LMF/OMF/RWG/LWG/ST/CF
+  sub_positions  text[] not null default '{}', -- 適性ポジション（最大4つ）。空なら未登録扱い
   attack_skill   text not null,              -- 攻撃時のプレースタイル ID
   defense_skill  text not null,              -- 守備時のプレースタイル ID
   updated_at     timestamptz not null default now(),
@@ -60,3 +61,11 @@ create policy "squad anon all" on public.squad_players
 --       exists (select 1 from public.profiles p
 --               where p.id = squad_players.profile_id and p.owner = auth.uid())
 --     );
+
+-- ── 既存のテーブルに後から足す場合 ──────────────────────────────
+-- 適性ポジション（2026-10-27 追加）。すでに squad_players がある環境ではこれだけ実行する。
+--
+--   alter table public.squad_players
+--     add column if not exists sub_positions text[] not null default '{}';
+--
+-- 空配列は「未登録」。その選手はポジション同士の近さから適性を推測する（従来どおり）。

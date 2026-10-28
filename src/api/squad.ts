@@ -18,6 +18,7 @@ interface SquadRow {
   slot_index: number;
   name: string;
   position: string;
+  sub_positions: string[] | null;
   attack_skill: string;
   defense_skill: string;
 }
@@ -34,6 +35,7 @@ const toSquadPlayer = (r: SquadRow): SquadPlayer => ({
   slotIndex: r.slot_index,
   name: r.name,
   position: r.position as PositionId,
+  subPositions: (r.sub_positions ?? []) as PositionId[],
   attackSkill: r.attack_skill,
   defenseSkill: r.defense_skill,
 });
@@ -92,6 +94,7 @@ export const blankSquad = (): SquadPlayer[] => {
     slotIndex: i,
     name: '',
     position,
+    subPositions: [],
     attackSkill: DEFAULT_SKILLS[position].attack,
     defenseSkill: DEFAULT_SKILLS[position].defense,
   }));
@@ -119,6 +122,7 @@ export const saveSquad = async (
     slot_index: p.slotIndex,
     name: p.name,
     position: p.position,
+    sub_positions: p.subPositions,
     attack_skill: p.attackSkill,
     defense_skill: p.defenseSkill,
     updated_at: new Date().toISOString(),

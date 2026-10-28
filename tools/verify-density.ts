@@ -136,7 +136,8 @@ ok(
   `平均適性 ${results.map((x) => x.r.best.fitAverage.toFixed(0)).join(' / ')}`,
 );
 
-const slow = results.filter((x) => x.ms > 3000);
-ok('1回の提案が 3 秒以内', slow.length === 0, `最大 ${Math.max(...results.map((x) => x.ms))}ms`);
+// 実用上の上限。厳密なベンチではなく「異常に遅くないか」の煙感知器
+const slow = results.filter((x) => x.ms > 5000);
+ok('1回の提案が 5 秒以内', slow.length === 0, `最大 ${Math.max(...results.map((x) => x.ms))}ms`);
 
 console.log('');

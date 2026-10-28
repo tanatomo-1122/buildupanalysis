@@ -33,6 +33,38 @@ export const positionFit = (main: PositionId, slot: PositionId): number => {
   return FIT[main]?.[slot] ?? FALLBACK;
 };
 
+/** 登録できる適性ポジションの数 */
+export const MAX_SUB_POSITIONS = 4;
+
+/** 適性ポジションとして登録されているときの適性 */
+const SUB_FIT = 80;
+/** 適性ポジションを登録済みの選手を、そこに無いポジションに置いたときの上限 */
+const OFF_LIST_CAP = 40;
+
+/**
+ * 選手ごとの適性。
+ *
+ * 適性ポジションが登録されていれば、それが正解として扱われる。
+ *   メイン                → 100
+ *   適性ポジション         → 80
+ *   どちらでもない         → 推測値を OFF_LIST_CAP で頭打ち（＝専門外）
+ *
+ * 未登録（配列が空）の選手は、従来どおり近さの表だけで推測する。
+ * 登録済みの選手と未登録の選手が混ざっていても破綻しない。
+ */
+export const playerFit = (
+  player: { position: PositionId; subPositions?: PositionId[] },
+  slot: PositionId,
+): number => {
+  const base = positionFit(player.position, slot);
+  if (base === FORBIDDEN) return FORBIDDEN;
+  const subs = player.subPositions ?? [];
+  if (subs.length === 0) return base;
+  if (slot === player.position) return 100;
+  if (subs.includes(slot)) return Math.max(base, SUB_FIT);
+  return Math.min(base, OFF_LIST_CAP);
+};
+
 /** 適性のラベル（UI 表示用） */
 export const fitLabel = (score: number): { label: string; tone: 'good' | 'ok' | 'weak' } => {
   if (score >= 95) return { label: '本職', tone: 'good' };

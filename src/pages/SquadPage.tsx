@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SQUAD_SIZE, blankSquad, loadSquad, saveSquad, usablePlayers } from '../api/squad';
+import { MAX_SUB_POSITIONS } from '../data/positions';
 import { DEFAULT_SKILLS, skillOptions } from '../data/skills';
 import { Button, Card, Notice } from '../components/ui';
 import type { PositionId, SquadPlayer, UserProfile } from '../types';
@@ -103,12 +104,15 @@ export default function SquadPage({ profile, squad, onSquadChange }: Props) {
           <p className="text-[12px] text-slate-500">読み込み中…</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-[12px]">
+            <table className="w-full min-w-[1040px] text-[12px]">
               <thead className="text-[10px] uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-2 py-1.5 text-left font-medium">#</th>
                   <th className="px-2 py-1.5 text-left font-medium">選手名</th>
                   <th className="px-2 py-1.5 text-left font-medium">メインポジション</th>
+                  <th className="px-2 py-1.5 text-left font-medium">
+                    適性ポジション（最大{MAX_SUB_POSITIONS}）
+                  </th>
                   <th className="px-2 py-1.5 text-left font-medium">プレースタイル（攻撃時）</th>
                   <th className="px-2 py-1.5 text-left font-medium">プレースタイル（守備時）</th>
                 </tr>
@@ -144,6 +148,13 @@ export default function SquadPage({ profile, squad, onSquadChange }: Props) {
                         </select>
                       </td>
                       <td className="px-2 py-1.5">
+                        <SubPositions
+                          main={p.position}
+                          value={p.subPositions}
+                          onChange={(next) => patch(i, { subPositions: next })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
                         <select
                           className="w-full"
                           value={p.attackSkill}
@@ -177,6 +188,62 @@ export default function SquadPage({ profile, squad, onSquadChange }: Props) {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+/**
+ * 適性ポジションの入力。
+ *
+ * eFootball の選手カードに出るサブのポジションをそのまま登録する。
+ * メインポジションは自動で除く（二重に数えないため）。
+ * 空欄のままなら未登録扱いで、従来どおりポジション同士の近さから推測する。
+ */
+function SubPositions({
+  main,
+  value,
+  onChange,
+}: {
+  main: PositionId;
+  value: PositionId[];
+  onChange: (next: PositionId[]) => void;
+}) {
+  // GK は他のポジションを兼ねないので触らせない
+  if (main === 'GK') {
+    return <span className="text-[11px] text-slate-600">—</span>;
+  }
+
+  const toggle = (pos: PositionId) => {
+    if (value.includes(pos)) {
+      onChange(value.filter((v) => v !== pos));
+    } else if (value.length < MAX_SUB_POSITIONS) {
+      onChange([...value, pos]);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {POSITION_ORDER.filter((pos) => pos !== 'GK' && pos !== main).map((pos) => {
+        const on = value.includes(pos);
+        const full = !on && value.length >= MAX_SUB_POSITIONS;
+        return (
+          <button
+            key={pos}
+            type="button"
+            disabled={full}
+            onClick={() => toggle(pos)}
+            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
+              on
+                ? 'border-sky-500/60 bg-sky-500/20 text-sky-200'
+                : full
+                  ? 'cursor-not-allowed border-edge/50 text-slate-700'
+                  : 'border-edge bg-panel2 text-slate-400 hover:bg-[#243040]'
+            }`}
+          >
+            {pos}
+          </button>
+        );
+      })}
     </div>
   );
 }

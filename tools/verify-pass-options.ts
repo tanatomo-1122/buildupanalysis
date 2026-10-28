@@ -11,10 +11,6 @@ import { evaluateBoard } from '../src/logic/evaluate';
 import { opponentLineup, recommendFormations } from '../src/logic/recommend';
 import type { Params, Player, PositionId, SquadPlayer, ValueModel } from '../src/types';
 
-import { FORMATIONS } from '../src/data/formations';
-
-const FORMATIONS_COUNT = FORMATIONS.length;
-
 let failures = 0;
 const check = (label: string, cond: boolean, extra = '') => {
   if (!cond) failures++;
@@ -195,10 +191,11 @@ console.log('\n── 提案エンジン ──');
     r.best.assignments.every((a) => a.positionFit >= 50),
     `平均適性 ${r.best.fitAverage.toFixed(0)}`,
   );
+  // 種まきは候補1形につき1回。それを明らかに超えていれば探索段が動いている
   check(
-    '  山登り法が動いている（初期割当より評価回数が多い）',
-    r.evaluations > FORMATIONS_COUNT * 4,
-    `${r.evaluations}回`,
+    '  探索段が動いている（種まきだけで終わっていない）',
+    r.evaluations > r.candidates * 2,
+    `候補${r.candidates}形 → 評価${r.evaluations}回`,
   );
 }
 

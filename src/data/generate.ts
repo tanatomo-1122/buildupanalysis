@@ -12,6 +12,9 @@
  *
  *   4-4-2   … OMF 不在 → RMF,CMF,CMF,LMF はまとめて第2レーンの「4」
  *   4-2-3-1 … OMF が居る → RMF,OMF,LMF が第3レーンの「3」
+ *   4-1-2-3 … DMF 1 + OMF 2 + 前線3（ユーザー確認済み）
+ *   4-3-3   … DMF + CMF + CMF は全部まとめて第2レーンの「3」
+ *             （DMF と CMF は同じレーンなので「4-1-2-3」にはならない）
  *
  * ■ 人数制限
  *
@@ -142,14 +145,29 @@ const centralSpread = (count: number, index: number): number => {
   return (index - (count - 1) / 2) * step;
 };
 
-/** その座標でそのポジションが許されるまで中央へ寄せる */
+/**
+ * その座標でそのポジションが許されるまで中央へ寄せる。
+ *
+ * 2万形ぶん呼ばれるが、(ポジション, x, y) の組み合わせはレーンと人数で決まるため
+ * 実際には数百通りしかない。結果をキャッシュする。
+ */
+const placeCache = new Map<string, { x: number; y: number }>();
+
 const place = (position: PositionId, x: number, y: number): { x: number; y: number } => {
   const xx = Math.round(x * 10) / 10;
+  const key = `${position}|${xx}|${Math.round(y * 10)}`;
+  const hit = placeCache.get(key);
+  if (hit) return hit;
+  let out = { x: xx, y: CENTER_Y };
   for (let t = 1; t >= 0; t -= 0.05) {
     const yy = Math.round((CENTER_Y + (y - CENTER_Y) * t) * 10) / 10;
-    if (isAllowedAt({ x: xx, y: yy }, 'home', position)) return { x: xx, y: yy };
+    if (isAllowedAt({ x: xx, y: yy }, 'home', position)) {
+      out = { x: xx, y: yy };
+      break;
+    }
   }
-  return { x: xx, y: CENTER_Y };
+  placeCache.set(key, out);
+  return out;
 };
 
 /* ── 列挙 ─────────────────────────────────────────────────── */
@@ -204,9 +222,17 @@ const buildSlots = (all: PositionId[]): FormationSlot[] => {
   return slots;
 };
 
-/** 「CF+両WG」「2CMF+両MF」のようにまとめる */
+/**
+ * 「CF+両WG」「2CMF+両MF」のようにまとめる。
+ * 同じ内訳が何千形にも現れるのでキャッシュする。
+ */
+const summarizeCache = new Map<string, string>();
+
 export const summarize = (group: PositionId[]): string => {
   if (group.length === 0) return '';
+  const cacheKey = group.join(',');
+  const cached = summarizeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
   const sides = group.filter((p) => SIDE[p] !== undefined);
   const centers = group.filter((p) => SIDE[p] === undefined);
   const counted = (list: PositionId[]) => {
@@ -218,7 +244,9 @@ export const summarize = (group: PositionId[]): string => {
     sides.length === 2 && sides[0].slice(1) === sides[1].slice(1)
       ? `両${sides[0].slice(1)}`
       : counted(sides);
-  return [counted(centers), paired].filter(Boolean).join('+');
+  const out = [counted(centers), paired].filter(Boolean).join('+');
+  summarizeCache.set(cacheKey, out);
+  return out;
 };
 
 /** 左右を入れ替えたポジション */

@@ -1,7 +1,7 @@
 import { DEFAULT_PARAMS, PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import { FORMATIONS, buildLineup, slotPosition, withLineShift } from '../data/formations';
 import type { FormationSlot } from '../data/formations';
-import { positionFit } from '../data/positions';
+import { playerFit } from '../data/positions';
 import { isSkillValidFor } from '../data/skills';
 import { POSITION_ORDER } from '../types';
 import type {
@@ -175,7 +175,7 @@ const skillBonus = (slotPos: PositionId, p: SquadPlayer): number =>
   (isSkillValidFor(slotPos, 'defense', p.defenseSkill) ? 8 : 0);
 
 export const fitScore = (slotPos: PositionId, p: SquadPlayer): number => {
-  const base = positionFit(p.position, slotPos);
+  const base = playerFit(p, slotPos);
   return base < 0 ? base : base + skillBonus(slotPos, p);
 };
 
@@ -260,7 +260,7 @@ const fitPenaltyOf = (
 ): number =>
   slots.reduce(
     (sum, slot, i) =>
-      sum + (weight * (100 - Math.min(100, positionFit(picks[i].position, slot.position)))) / 100,
+      sum + (weight * (100 - Math.min(100, playerFit(picks[i], slot.position)))) / 100,
     0,
   );
 
@@ -290,9 +290,7 @@ const fitLadders = (squad: SquadPlayer[]): Map<PositionId, number[]> => {
   for (const pos of POSITION_ORDER) {
     map.set(
       pos,
-      squad
-        .map((p) => positionFit(p.position, pos))
-        .sort((a, b) => b - a),
+      squad.map((p) => playerFit(p, pos)).sort((a, b) => b - a),
     );
   }
   return map;
@@ -366,12 +364,12 @@ const SEARCH = {
    */
   fullEvalTop: 80,
   /** ラインの高さを振ってみる上位の数 */
-  lineSearchTop: 200,
+  lineSearchTop: 120,
   /**
    * 名前ごとに盤面評価へ送る形の数（適性の概算で上位から選ぶ）。
    * 名前を横断して探すときだけ効く。名前を指定したときはその名前の全形を見る。
    */
-  perFamily: 8,
+  perFamily: 6,
 };
 
 /* ------------------------------------------------------------------ *
@@ -521,7 +519,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
         // そのスロットに合いそうなベンチだけを候補にする
         const candidates = bench
           .map((p) => ({ p, f: fitScore(slots[i].position, p) }))
-          .filter((c) => positionFit(c.p.position, slots[i].position) >= MIN_CANDIDATE_FIT)
+          .filter((c) => playerFit(c.p, slots[i].position) >= MIN_CANDIDATE_FIT)
           .sort((a, b) => b.f - a.f)
           .slice(0, SEARCH.candidatesPerSlot);
 
@@ -561,7 +559,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
       slot,
       player: picks[i],
       fit: fitScore(slot.position, picks[i]),
-      positionFit: positionFit(picks[i].position, slot.position),
+      positionFit: playerFit(picks[i], slot.position),
     }));
 
     return {

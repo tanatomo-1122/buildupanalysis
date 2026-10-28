@@ -103,6 +103,14 @@ export interface SquadPlayer {
   name: string;
   /** メインポジション */
   position: PositionId;
+  /**
+   * 適性ポジション（最大4つ）。eFootball の選手カードに出るサブのポジション。
+   *
+   * **登録されていればこちらが正**で、メイン + 適性ポジション以外は
+   * 「専門外」として強く減点する。空のままなら従来どおり
+   * ポジション同士の近さの表（`data/positions.ts`）で推測する。
+   */
+  subPositions: PositionId[];
   /** 攻撃時のプレースタイル */
   attackSkill: string;
   /** 守備時のプレースタイル */
