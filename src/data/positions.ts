@@ -36,8 +36,18 @@ export const positionFit = (main: PositionId, slot: PositionId): number => {
 /** 登録できる適性ポジションの数 */
 export const MAX_SUB_POSITIONS = 4;
 
-/** 適性ポジションとして登録されているときの適性 */
-const SUB_FIT = 80;
+/**
+ * 適性ポジションとして登録されているときの適性。
+ *
+ * **メインと同じ 100**。eFootball では適性ポジションに就いていれば
+ * そのポジションの選手として扱われるので、選考で差を付けない。
+ * （80 にしていた頃は、全ポジションで本職と適性を1人ずつ用意しても
+ *   11枠すべてが本職側に取られていた＝適性ポジションが死んでいた）
+ *
+ * 違いが出るのはプレースタイルの側。スタイルは自分の適用ポジション一覧で
+ * 発動の可否が決まるので、そこは `vectors.ts` の `activeSkill` が見ている。
+ */
+const SUB_FIT = 100;
 /** 適性ポジションを登録済みの選手を、そこに無いポジションに置いたときの上限 */
 const OFF_LIST_CAP = 40;
 
@@ -46,7 +56,7 @@ const OFF_LIST_CAP = 40;
  *
  * 適性ポジションが登録されていれば、それが正解として扱われる。
  *   メイン                → 100
- *   適性ポジション         → 80
+ *   適性ポジション         → 100（メインと対等）
  *   どちらでもない         → 推測値を OFF_LIST_CAP で頭打ち（＝専門外）
  *
  * 未登録（配列が空）の選手は、従来どおり近さの表だけで推測する。
@@ -63,6 +73,20 @@ export const playerFit = (
   if (slot === player.position) return 100;
   if (subs.includes(slot)) return Math.max(base, SUB_FIT);
   return Math.min(base, OFF_LIST_CAP);
+};
+
+/**
+ * その枠がメインなのか適性ポジションなのか。
+ *
+ * 適性値はどちらも 100 で同じなので、スコアからは区別できない。
+ * 画面では区別して見せたいのでこちらを使う。
+ */
+export const aptitudeOf = (
+  player: { position: PositionId; subPositions?: PositionId[] },
+  slot: PositionId,
+): 'main' | 'sub' | 'off' => {
+  if (slot === player.position) return 'main';
+  return (player.subPositions ?? []).includes(slot) ? 'sub' : 'off';
 };
 
 /** 適性のラベル（UI 表示用） */

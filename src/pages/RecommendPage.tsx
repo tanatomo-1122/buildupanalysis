@@ -701,7 +701,13 @@ function BestCard({
               </thead>
               <tbody>
                 {rec.assignments.map((a) => {
-                  const fl = fitLabel(a.positionFit);
+                  // メインも適性ポジションも適性値は 100 なので、区別は aptitude で出す
+                  const fl =
+                    a.aptitude === 'main'
+                      ? { label: '本職', tone: 'good' as const }
+                      : a.aptitude === 'sub'
+                        ? { label: '適性ポジ', tone: 'good' as const }
+                        : fitLabel(a.positionFit);
                   return (
                     <tr key={a.slot.number} className="border-t border-edge/60">
                       <td className="px-2 py-1.5 font-mono text-slate-500">{a.slot.number}</td>

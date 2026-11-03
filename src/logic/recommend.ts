@@ -1,7 +1,7 @@
 import { DEFAULT_PARAMS, PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import { FORMATIONS, buildLineup, slotPosition, withLineShift } from '../data/formations';
 import type { FormationSlot } from '../data/formations';
-import { playerFit } from '../data/positions';
+import { aptitudeOf, playerFit } from '../data/positions';
 import { isSkillValidFor } from '../data/skills';
 import { POSITION_ORDER } from '../types';
 import type {
@@ -74,6 +74,8 @@ export interface SlotAssignment {
   fit: number;
   /** ポジション適性だけの値 */
   positionFit: number;
+  /** その枠がメインか適性ポジションか（適性値は同じなので別に持つ） */
+  aptitude: 'main' | 'sub' | 'off';
 }
 
 export interface FormationRecommendation {
@@ -560,6 +562,7 @@ export const recommendFormations = (input: RecommendInput): RecommendResult => {
       player: picks[i],
       fit: fitScore(slot.position, picks[i]),
       positionFit: playerFit(picks[i], slot.position),
+      aptitude: aptitudeOf(picks[i], slot.position),
     }));
 
     return {

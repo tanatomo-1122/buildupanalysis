@@ -8,10 +8,10 @@
  * ・提案の幅（組める形の数）が実際に広がるか
  */
 import { DEFAULT_PARAMS } from '../src/constants';
-import { playerFit, positionFit } from '../src/data/positions';
+import { aptitudeOf, playerFit, positionFit } from '../src/data/positions';
 import { ALL_SKILLS, DEFAULT_SKILLS } from '../src/data/skills';
 import { activeSkill, arrivalOf, isSkillActive } from '../src/logic/vectors';
-import { recommendFormations, opponentLineup } from '../src/logic/recommend';
+import { fitScore, opponentLineup, recommendFormations } from '../src/logic/recommend';
 import type { PositionId, SquadPlayer } from '../src/types';
 
 let failures = 0;
@@ -37,9 +37,23 @@ console.log('── 適性の計算 ──');
   );
   check('メインは 100', playerFit(registered, 'CMF') === 100);
   check(
-    '登録した適性ポジションは 80 以上',
-    playerFit(registered, 'DMF') >= 80 && playerFit(registered, 'OMF') >= 80,
+    '登録した適性ポジションはメインと同じ 100（対等）',
+    playerFit(registered, 'DMF') === 100 && playerFit(registered, 'OMF') === 100,
     `DMF ${playerFit(registered, 'DMF')} / OMF ${playerFit(registered, 'OMF')}`,
+  );
+  check(
+    'メインと適性で選考スコアに差が付かない',
+    fitScore('DMF', { ...registered, id: 'c', name: 'c', attackSkill: DEFAULT_SKILLS.DMF.attack, defenseSkill: DEFAULT_SKILLS.DMF.defense }) ===
+      fitScore('DMF', {
+        ...registered, id: 'd', name: 'd', position: 'DMF', subPositions: ['CMF'],
+        attackSkill: DEFAULT_SKILLS.DMF.attack, defenseSkill: DEFAULT_SKILLS.DMF.defense,
+      }),
+  );
+  check(
+    'メイン / 適性 / 対象外 を区別できる',
+    aptitudeOf(registered, 'CMF') === 'main' &&
+      aptitudeOf(registered, 'DMF') === 'sub' &&
+      aptitudeOf(registered, 'RMF') === 'off',
   );
   check(
     '登録済みでリストに無いポジションは専門外（50未満）',
