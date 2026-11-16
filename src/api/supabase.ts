@@ -1,20 +1,14 @@
 /**
  * Supabase (PostgREST) への最小クライアント。
  *
- * SDK は入れず fetch だけで叩いている。使っているのは
- * GET / POST / PATCH / DELETE の4種類だけなので依存を増やす必要がない。
- *
- * 接続情報は Vite の環境変数から読む（`.env.local` に置く）:
- *   VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
- *   VITE_SUPABASE_ANNON_KEY=ey...
+ * SDK は入れず fetch だけで叩いている。ログイン中はユーザーのアクセストークンを、
+ * 未ログインなら anon キーを Bearer に載せる。何が見えるかは DB 側の RLS が決める。
  */
+import { getAccessToken } from './auth';
+import { anonKey, supabaseConfigured, supabaseUrl } from './supabase-env';
 
-const url = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/+$/, '');
-const anonKey = import.meta.env.VITE_SUPABASE_ANNON_KEY ?? '';
-
-export const supabaseConfigured = Boolean(url && anonKey);
-
-export const supabaseUrl = url;
+export { supabaseConfigured, supabaseUrl };
+const url = supabaseUrl;
 
 export class SupabaseError extends Error {
   constructor(
@@ -27,9 +21,9 @@ export class SupabaseError extends Error {
   }
 }
 
-const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
+const headers = async (extra: Record<string, string> = {}): Promise<Record<string, string>> => ({
   apikey: anonKey,
-  Authorization: `Bearer ${anonKey}`,
+  Authorization: `Bearer ${(await getAccessToken()) ?? anonKey}`,
   'Content-Type': 'application/json',
   ...extra,
 });
@@ -52,8 +46,20 @@ const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    let pgMessage = '';
+    try {
+      pgMessage = (JSON.parse(body) as { message?: string }).message ?? '';
+    } catch {
+      /* JSON でなければ本文をそのまま detail に回す */
+    }
+    // RPC の raise exception は日本語の理由をそのまま出す
+    if (res.status === 400 && pgMessage && /[\u3040-\u30ff\u4e00-\u9fff]/.test(pgMessage)) {
+      throw new SupabaseError(pgMessage, res.status, body.slice(0, 400));
+    }
     throw new SupabaseError(
-      `Supabase のリクエストが失敗しました（HTTP ${res.status}）。テーブルと RLS ポリシーが supabase/schema.sql のとおりか確認してください。`,
+      res.status === 401 || res.status === 403
+        ? 'この操作の権限がありません。ログインし直してください。'
+        : `Supabase のリクエストが失敗しました（HTTP ${res.status}）。テーブルと RLS ポリシーが supabase/schema.sql のとおりか確認してください。`,
       res.status,
       body.slice(0, 400),
     );
@@ -63,22 +69,33 @@ const request = async <T>(path: string, init: RequestInit): Promise<T> => {
   return (text ? JSON.parse(text) : undefined) as T;
 };
 
-export const sbSelect = <T>(table: string, query = ''): Promise<T[]> =>
-  request<T[]>(`${table}${query ? `?${query}` : ''}`, { method: 'GET', headers: headers() });
+export const sbSelect = async <T>(table: string, query = ''): Promise<T[]> =>
+  request<T[]>(`${table}${query ? `?${query}` : ''}`, { method: 'GET', headers: await headers() });
 
-export const sbInsert = <T>(table: string, rows: unknown): Promise<T[]> =>
+export const sbInsert = async <T>(table: string, rows: unknown): Promise<T[]> =>
   request<T[]>(table, {
     method: 'POST',
-    headers: headers({ Prefer: 'return=representation' }),
+    headers: await headers({ Prefer: 'return=representation' }),
     body: JSON.stringify(rows),
   });
 
-export const sbUpsert = <T>(table: string, rows: unknown, onConflict: string): Promise<T[]> =>
+export const sbUpsert = async <T>(table: string, rows: unknown, onConflict: string): Promise<T[]> =>
   request<T[]>(`${table}?on_conflict=${onConflict}`, {
     method: 'POST',
-    headers: headers({ Prefer: 'return=representation,resolution=merge-duplicates' }),
+    headers: await headers({ Prefer: 'return=representation,resolution=merge-duplicates' }),
     body: JSON.stringify(rows),
   });
 
-export const sbDelete = (table: string, query: string): Promise<void> =>
-  request<void>(`${table}?${query}`, { method: 'DELETE', headers: headers() });
+export const sbUpdate = async <T>(table: string, query: string, patch: unknown): Promise<T[]> =>
+  request<T[]>(`${table}?${query}`, {
+    method: 'PATCH',
+    headers: await headers({ Prefer: 'return=representation' }),
+    body: JSON.stringify(patch),
+  });
+
+export const sbDelete = async (table: string, query: string): Promise<void> =>
+  request<void>(`${table}?${query}`, { method: 'DELETE', headers: await headers() });
+
+/** Postgres 関数の呼び出し（/rest/v1/rpc/<name>） */
+export const sbRpc = async <T>(fn: string, args: unknown): Promise<T> =>
+  request<T>(`rpc/${fn}`, { method: 'POST', headers: await headers(), body: JSON.stringify(args) });

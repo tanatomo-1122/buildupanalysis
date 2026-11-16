@@ -31,7 +31,7 @@ interface Props {
 }
 
 const TEAM_LABEL: Record<TeamId, string> = { home: '自チーム', away: '相手チーム' };
-const TEAM_COLOR: Record<TeamId, string> = { home: '#0ea5e9', away: '#f43f5e' };
+const TEAM_COLOR: Record<TeamId, string> = { home: 'var(--team-hex)', away: 'var(--away-hex)' };
 
 function TeamDot({ team }: { team: TeamId }) {
   return (
@@ -179,8 +179,8 @@ export default function ControlPanel({
                 onClick={() => onParams({ possessionTeam: t })}
                 className={`flex items-center justify-center rounded-md border px-2 py-1.5 text-[12px] transition-colors ${
                   params.possessionTeam === t
-                    ? 'border-sky-500/60 bg-sky-500/15 text-sky-200'
-                    : 'border-edge bg-panel2 text-slate-400 hover:bg-[#243040]'
+                    ? 'border-team/70 bg-team/15 text-team'
+                    : 'border-edge bg-panel2 text-slate-400 hover:bg-[#2b2636]'
                 }`}
               >
                 <TeamDot team={t} />

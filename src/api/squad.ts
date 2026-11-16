@@ -1,6 +1,6 @@
 import { DEFAULT_SKILLS } from '../data/skills';
 import type { PositionId, SquadPlayer, UserProfile } from '../types';
-import { sbDelete, sbInsert, sbSelect, sbUpsert } from './supabase';
+import { sbInsert, sbRpc, sbSelect, sbUpdate, sbUpsert } from './supabase';
 
 /** 登録する選手の人数 */
 export const SQUAD_SIZE = 23;
@@ -8,7 +8,8 @@ export const SQUAD_SIZE = 23;
 interface ProfileRow {
   id: string;
   user_name: string;
-  efootball_id: string;
+  efootball_id: string | null;
+  team_color: string | null;
   created_at: string;
 }
 
@@ -26,7 +27,8 @@ interface SquadRow {
 const toProfile = (r: ProfileRow): UserProfile => ({
   id: r.id,
   userName: r.user_name,
-  efootballId: r.efootball_id,
+  efootballId: r.efootball_id ?? '',
+  teamColor: r.team_color ?? 'blaze',
   createdAt: r.created_at,
 });
 
@@ -44,35 +46,36 @@ const toSquadPlayer = (r: SquadRow): SquadPlayer => ({
  * プロフィール
  * ------------------------------------------------------------------ */
 
-export const listProfiles = async (): Promise<UserProfile[]> => {
-  const rows = await sbSelect<ProfileRow>('profiles', 'select=*&order=created_at.asc');
-  return rows.map(toProfile);
-};
-
-export const findProfile = async (efootballId: string): Promise<UserProfile | null> => {
-  const rows = await sbSelect<ProfileRow>(
-    'profiles',
-    `select=*&efootball_id=eq.${encodeURIComponent(efootballId)}&limit=1`,
-  );
-  return rows[0] ? toProfile(rows[0]) : null;
-};
-
-/** 同じ eFootball ID があればそれを返し、無ければ作る */
-export const registerProfile = async (
-  userName: string,
-  efootballId: string,
-): Promise<UserProfile> => {
-  const existing = await findProfile(efootballId);
-  if (existing) return existing;
-  const rows = await sbInsert<ProfileRow>('profiles', {
-    user_name: userName,
-    efootball_id: efootballId,
+/**
+ * ログイン中の本人のプロフィール。RLS で自分の行しか返らないので条件は要らない。
+ * 初回ログインなら Google の名前でクラブを作る。
+ */
+export const loadMyProfile = async (fallbackName: string): Promise<UserProfile> => {
+  const rows = await sbSelect<ProfileRow>('profiles', 'select=*&limit=1');
+  if (rows[0]) return toProfile(rows[0]);
+  const created = await sbInsert<ProfileRow>('profiles', {
+    user_name: fallbackName.trim() || 'MY CLUB',
   });
+  return toProfile(created[0]);
+};
+
+export const updateMyProfile = async (
+  id: string,
+  patch: Partial<Pick<UserProfile, 'userName' | 'efootballId' | 'teamColor'>>,
+): Promise<UserProfile> => {
+  const body: Record<string, unknown> = {};
+  if (patch.userName !== undefined) body.user_name = patch.userName;
+  if (patch.efootballId !== undefined) body.efootball_id = patch.efootballId.trim() || null;
+  if (patch.teamColor !== undefined) body.team_color = patch.teamColor;
+  const rows = await sbUpdate<ProfileRow>('profiles', `id=eq.${encodeURIComponent(id)}`, body);
   return toProfile(rows[0]);
 };
 
-export const deleteProfile = (id: string): Promise<void> =>
-  sbDelete('profiles', `id=eq.${encodeURIComponent(id)}`);
+/** 以前（ログイン導入前）に eFootball ID で作ったデータを自分のものにする */
+export const claimProfile = async (efootballId: string): Promise<UserProfile> => {
+  const row = await sbRpc<ProfileRow>('claim_profile', { p_efootball_id: efootballId.trim() });
+  return toProfile(row);
+};
 
 /* ------------------------------------------------------------------ *
  * 登録選手

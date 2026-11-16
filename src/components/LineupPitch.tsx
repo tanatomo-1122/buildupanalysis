@@ -1,5 +1,6 @@
 import { PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import type { Player } from '../types';
+import { awayHex, awayInk, teamHex, teamInk } from '../theme';
 
 /** ピッチ座標(y上向き) → SVG座標(y下向き) */
 const Y = (y: number) => PITCH_WIDTH - y;
@@ -20,7 +21,7 @@ export default function LineupPitch({
   awayLabel: string;
 }) {
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#14361f]">
+    <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#16221c]">
       <svg
         viewBox={`0 0 ${PITCH_LENGTH} ${PITCH_WIDTH}`}
         className="block w-full"
@@ -42,9 +43,9 @@ export default function LineupPitch({
                 cx={p.pos.x}
                 cy={Y(p.pos.y)}
                 r={2.1}
-                fill={isHome ? '#0ea5e9' : '#f43f5e'}
-                fillOpacity={isHome ? 1 : 0.55}
-                stroke="rgba(255,255,255,0.85)"
+                fill={isHome ? teamHex() : awayHex()}
+                fillOpacity={isHome ? 1 : 0.7}
+                stroke="rgba(20,18,24,0.6)"
                 strokeWidth={0.3}
               />
               <text
@@ -53,7 +54,7 @@ export default function LineupPitch({
                 textAnchor="middle"
                 fontSize={2.3}
                 fontWeight={700}
-                fill="#ffffff"
+                fill={isHome ? teamInk() : awayInk()}
                 fontFamily="ui-monospace, monospace"
               >
                 {p.number}
@@ -96,11 +97,11 @@ export default function LineupPitch({
       </svg>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-edge px-3 py-2 text-[11px] text-slate-400">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-sky-500" />
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-team" />
           {homeLabel}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500/60" />
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-away" />
           {awayLabel}
         </span>
       </div>

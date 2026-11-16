@@ -1,8 +1,8 @@
-# eFootball 戦術提案ボード
+# MY XI — eFootball 戦術提案ボード
 
-登録した選手と指定したチームスタイルから、**相手のフォーメーションに最も噛み合う自分の
-フォーメーションとスタメン11人**を提案するツール。
-提案結果は 2D の戦術ボードで確認・微調整できます。
+登録した選手と指定したチームスタイルから、**相手のフォーメーションに噛み合う
+攻撃時・守備時のフォーメーションとスタメン11人**を提案するツール。
+作った戦術は自分のクラブに保存でき、見せたいものだけをリンクや画像で共有できます。
 
 評価モデル（チームスタイル・プレースタイル・空間支配率・パスコース）は eFootball の
 定義に準拠しており、定数はコード側で固定しています。
@@ -11,22 +11,35 @@
 
 ### 1. Supabase を用意する
 
-ユーザー登録と選手データの保存に Supabase を使います。
+ログイン（Google）とデータの保存に Supabase を使います。
 
 1. [Supabase](https://supabase.com) でプロジェクトを作成
-2. SQL Editor で `supabase/schema.sql` を実行（`profiles` と `squad_players` が作られます）
+2. SQL Editor で `supabase/schema.sql` を実行
+   - 旧版（ログインなし）から上げる場合は `supabase/migrations/20261116_auth_and_tactics.sql` を実行
 3. Project Settings → API から URL と anon キーを取得
 
-### 2. 環境変数
+### 2. Google ログインを有効にする
+
+1. Google Cloud Console → 「API とサービス」→「認証情報」で **OAuth クライアント ID（ウェブ アプリケーション）** を作る
+   - 承認済みのリダイレクト URI: `https://<プロジェクトID>.supabase.co/auth/v1/callback`
+2. Supabase → Authentication → Sign In / Providers → **Google** を有効にし、クライアント ID とシークレットを貼る
+3. Supabase → Authentication → URL Configuration
+   - Site URL: 公開先の URL（例 `https://myxi.vercel.app`）
+   - Redirect URLs: 公開先の URL と `http://localhost:5173` を追加
+
+### 3. 環境変数
 
 ```bash
 cp .env.example .env.local
 # .env.local を編集
 #   VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
-#   VITE_SUPABASE_ANON_KEY=ey...
+#   VITE_SUPABASE_ANNON_KEY=ey...
 ```
 
-### 3. 起動
+anon キーはブラウザに配られる公開キーです。データの守りは DB 側の RLS
+（本人の行だけ読み書きできる・公開にした戦術だけ誰でも読める）で行っています。
+
+### 4. 起動
 
 ```bash
 npm install
@@ -39,19 +52,22 @@ Vercel にそのままデプロイできます（フレームワークプリセ�
 
 > **Supabase を用意する前に触ってみたい場合**
 > `node tools/mock-supabase.mjs` で PostgREST 互換のインメモリのモックが
-> `http://localhost:54321` に立ちます。`.env.local` にその URL と適当なキーを書けば
-> 画面を通しで確認できます（プロセスを止めるとデータは消えます。開発用です）。
+> `http://localhost:54321` に立ちます（RLS の動きも真似ています）。
+> ログインは Google を通らないため、E2E と同じく `tools/e2e-setup.mjs` が出すセッションを
+> localStorage の `buildup-board:session` に入れて使います。
 
 ## 画面
 
 | タブ | できること |
 | --- | --- |
-| ユーザー | eFootball のユーザーネームと ID で登録・切り替え |
-| 選手登録 | 23名の選手名・メインポジション・攻守のプレースタイルを登録 |
-| 戦術提案 | 相手の布陣を自由に組んで、102通りから最適なフォーメーションとスタメンを提案 |
+| 戦術提案 | 相手の形をプリセットか人数で入れて、攻撃時・守備時の形とスタメンを提案。結果を保存できる |
+| マイ戦術 | 保存した戦術の一覧。公開・リンクのコピー・画像保存・X / LINE への共有 |
+| 選手 | 23名の選手名・メイン／適性ポジション・攻守のプレースタイルを登録 |
 | 戦術ボード | 提案された布陣をドラッグで動かして検証 |
+| クラブ | クラブ名とチームカラー（画面と共有画像の色）、以前のデータの引き継ぎ |
 
 選手名が入っている選手だけが起用対象になります（提案には11名以上が必要）。
+共有リンク（`?t=<共有ID>`）はログインなしで開けます。
 
 ## 相手の配置（フリーエディット）
 

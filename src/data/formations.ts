@@ -471,16 +471,19 @@ export const withLineShift = (slots: FormationSlot[], dx: number): FormationSlot
 export const FORMATIONS: Formation[] = generateFormations();
 
 /** 名前ごとの代表（＝その名前で最初に出てくる構成） */
-export const FORMATION_FAMILIES: Formation[] = FORMATIONS.filter(
-  (f, _i, arr) => arr.find((x) => x.family === f.family) === f,
-);
+export const FORMATION_FAMILIES: Formation[] = (() => {
+  // 19268 形に対して find で探すと O(n²) で起動が 2 秒止まるので、1 回の走査で拾う
+  const seen = new Set<string>();
+  return FORMATIONS.filter((f) => !seen.has(f.family) && Boolean(seen.add(f.family)));
+})();
+
+const BY_ID = new Map(FORMATIONS.map((f) => [f.id, f]));
 
 /** その基本形のタイプをすべて返す */
 export const typesOf = (family: string): Formation[] =>
   FORMATIONS.filter((f) => f.family === family);
 
-export const formationById = (id: string): Formation =>
-  FORMATIONS.find((f) => f.id === id) ?? FORMATIONS[0];
+export const formationById = (id: string): Formation => BY_ID.get(id) ?? FORMATIONS[0];
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 

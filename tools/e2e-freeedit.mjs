@@ -25,18 +25,42 @@ page.on('console', (m) => {
   if (m.type() !== 'error') return;
   const t = m.text();
   if (t.includes('Failed to load resource') && t.includes('404')) return;
+  // テスト環境は外部（Google Fonts）に出られない
+  if (t.includes('ERR_TUNNEL_CONNECTION_FAILED') || t.includes('ERR_NAME_NOT_RESOLVED')) return;
   errors.push(t);
 });
 
-/* ── 事前に投入したプロフィールを選択済みにして開く ───────── */
-const profile = JSON.parse(process.env.E2E_PROFILE);
-await page.goto(BASE, { waitUntil: 'networkidle' });
-await page.evaluate((p) => localStorage.setItem('buildup-board:profile', JSON.stringify(p)), profile);
-await page.reload({ waitUntil: 'networkidle' });
+const API = 'http://localhost:54321/rest/v1';
 
-// 選手登録タブを一度開いて 23 名を読み込ませる
-await page.getByRole('button', { name: '選手登録' }).click();
+/* ── 未ログイン：入口だけが見え、他人のデータは取れない ───────── */
+await page.goto(BASE, { waitUntil: 'networkidle' });
+check('未ログインでは Google ログインの入口が出る', (await page.getByRole('button', { name: 'Google でログイン' }).count()) === 1);
+check('未ログインでは他人のプロフィール一覧が出ない', (await page.getByText('登録済みのユーザー').count()) === 0);
+const anonProfiles = await (await fetch(`${API}/profiles?select=*`, { headers: { apikey: 'mock' } })).json();
+check('未ログインの API からはプロフィールが読めない', Array.isArray(anonProfiles) && anonProfiles.length === 0, `${anonProfiles.length}件`);
+
+/* ── ログイン済みセッションを入れて開く ───────────────────── */
+const session = JSON.parse(process.env.E2E_SESSION);
+await page.evaluate((s) => localStorage.setItem('buildup-board:session', JSON.stringify(s)), session);
+await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
+check('選手がそろっていればログイン直後は戦術提案が開く', (await page.getByRole('button', { name: 'この相手に効く形を探す' }).count()) === 1);
+
+/* ── チームカラー ─────────────────────────────────────── */
+await page.getByRole('button', { name: 'クラブ', exact: true }).click();
+await page.waitForTimeout(300);
+await page.getByRole('radio', { name: 'アズール' }).click();
+await page.waitForTimeout(400);
+const teamHex = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--team-hex').trim());
+check('チームカラーを選ぶと画面の色が変わる', teamHex === '#4d8dff', teamHex);
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(1500);
+const teamHex2 = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--team-hex').trim());
+check('チームカラーが保存され、開き直しても残る', teamHex2 === '#4d8dff', teamHex2);
+
+// 選手タブ
+await page.getByRole('button', { name: '選手', exact: true }).click();
+await page.waitForTimeout(500);
 
 /* ── 適性ポジションの登録 ─────────────────────────────── */
 const subHeader = await page.getByText(/適性ポジション/).count();
@@ -52,7 +76,7 @@ await page.waitForTimeout(200);
 const selected = await page
   .locator('tbody tr')
   .nth(3)
-  .locator('button.border-sky-500\\/60')
+  .locator('button.border-team\\/70')
   .count();
 check('適性ポジションが2つ選択される', selected === 2, `${selected}個`);
 
@@ -63,7 +87,7 @@ await page.waitForTimeout(200);
 const capped = await page
   .locator('tbody tr')
   .nth(3)
-  .locator('button.border-sky-500\\/60')
+  .locator('button.border-team\\/70')
   .count();
 check('適性ポジションを4つ選べる', capped === 4, `${capped}個`);
 check('5つ目は押せない（上限4）', await chips.nth(4).isDisabled());
@@ -77,8 +101,39 @@ check('外すと上限が空く', !(await chips.nth(4).isDisabled()));
 await page.getByRole('button', { name: '戦術提案' }).click();
 await page.waitForTimeout(600);
 
-const warn = await page.getByText(/起用できる選手が/).count();
+const warn = await page.getByText(/起用できる選手がまだ足りません/).count();
 check('23名が登録され、提案タブが使える', warn === 0);
+
+/* ── 相手の形の入力（プリセット＋人数） ───────────────────── */
+const picker = page.getByTestId('opponent-picker');
+const oppName = () => page.getByTestId('opponent-name').innerText();
+check('既定の相手は 4-2-3-1', (await oppName()) === '4-2-3-1');
+await picker.getByRole('button', { name: '4-3-3', exact: true }).click();
+await page.waitForTimeout(150);
+check('プリセット1タップで 4-3-3 になる', (await oppName()) === '4-3-3');
+
+await picker.getByRole('button', { name: 'クリア' }).click();
+await page.waitForTimeout(100);
+check('クリアで「あと10人」になる', (await picker.locator('span[role=status]').innerText()) === 'あと10人');
+
+// 4-1-2-3 を人数で組む: LSB/RSB, CB×2, DMF×1, OMF×2, LWG/RWG, CF×1
+const tap = (name, n = 1) => Array.from({ length: n }).reduce((p) => p.then(() => picker.getByRole('button', { name, exact: true }).click()), Promise.resolve());
+await tap('LSB'); await tap('RSB');
+await tap('CBを増やす', 2); await tap('DMFを増やす'); await tap('OMFを増やす', 2);
+await tap('LWG'); await tap('RWG'); await tap('CFを増やす');
+await page.waitForTimeout(150);
+check('人数入力で 4-1-2-3 が組める', (await oppName()) === '4-1-2-3', await oppName());
+check('10人そろうと OK になる', (await picker.locator('span[role=status]').innerText()) === '10人 OK');
+check('10人そろうと増やすボタンが止まる', await picker.getByRole('button', { name: 'STを増やす' }).isDisabled());
+await tap('CBを減らす');
+await page.waitForTimeout(100);
+check('CB の上限は3（2→1→+で戻せる）', !(await picker.getByRole('button', { name: 'CBを増やす' }).isDisabled()));
+await tap('CBを増やす', 1);
+await page.waitForTimeout(100);
+
+// 以降は 4-2-3-1 で盤面操作を試す
+await picker.getByRole('button', { name: '4-2-3-1', exact: true }).click();
+await page.waitForTimeout(300);
 
 const svg = page.locator('svg').filter({ has: page.locator('circle') }).last();
 const box = await svg.boundingBox();
@@ -167,8 +222,8 @@ t = (await readTokens()).find((x) => x.number === cb.number);
 check('もう一度クリックで CMF → DMF', t.position === 'DMF', `→ ${t.position}`);
 
 /* ── 3. 編集済みの配置で提案が走る ────────────────────── */
-await page.getByRole('button', { name: /最適フォーメーションを提案/ }).click();
-await page.waitForTimeout(4000);
+await page.getByRole('button', { name: 'この相手に効く形を探す' }).click();
+await page.waitForTimeout(5000);
 
 const hasDensity = await page.getByText('相手配置の密度解析').count();
 check('密度解析カードが出る', hasDensity > 0);
@@ -197,12 +252,13 @@ const bestOf = () =>
   });
 const beforeSwitch = await bestOf();
 
-// 「評価モデル（試験）」の select を パスコース重視 に変える
+// 「評価モデル（試験）」の select を パスコース重視 に変える（詳しい条件の中）
+await page.getByText('詳しい条件（局面・評価モデル）').click();
 const selects = page.locator('select');
 const modelSelect = selects.nth((await selects.count()) - 1);
 await modelSelect.selectOption({ label: 'パスコース重視' });
 await page.waitForTimeout(200);
-await page.getByRole('button', { name: /最適フォーメーションを提案/ }).click();
+await page.getByRole('button', { name: 'この相手に効く形を探す' }).click();
 await page.waitForTimeout(6000);
 
 const afterSwitch = await bestOf();
@@ -250,6 +306,44 @@ await page.waitForTimeout(400);
 check('攻撃時に戻せる', (await page.getByText(/攻撃時の詳細/).count()) > 0);
 
 await page.screenshot({ path: '/tmp/variants.png', fullPage: true });
+
+/* ── 保存 → マイ戦術 → 共有 ───────────────────────────── */
+await page.getByRole('button', { name: 'この戦術を保存' }).click();
+await page.waitForTimeout(800);
+check('保存するとマイ戦術が開く', (await page.getByRole('button', { name: 'マイ戦術', exact: true }).getAttribute('aria-current')) === 'page');
+check('保存した戦術が一覧に出る', (await page.getByRole('list', { name: '保存した戦術' }).locator('li').count()) === 1);
+const tacticTitle = await page.locator('article h2').innerText();
+check('戦術の詳細が開いている', tacticTitle.startsWith('対4-2-3-1'), tacticTitle);
+
+const anonBefore = await (await fetch(`${API}/tactics?select=share_id`, { headers: { apikey: 'mock' } })).json();
+check('保存直後は非公開（未ログインからは見えない）', anonBefore.length === 0);
+await page.getByRole('button', { name: '公開する' }).click();
+await page.waitForTimeout(400);
+const anonAfter = await (await fetch(`${API}/tactics?select=share_id&is_public=is.true`, { headers: { apikey: 'mock' } })).json();
+check('公開すると共有リンクで見られる', anonAfter.length === 1);
+
+await page.screenshot({ path: '/tmp/mytactics.png', fullPage: true });
+
+// ログインしていない別のブラウザで共有リンクを開く
+const guest = await browser.newPage({ viewport: { width: 420, height: 900 } });
+guest.on('pageerror', (e) => errors.push(`guest: ${e}`));
+await guest.goto(`${BASE}?t=${anonAfter[0].share_id}`, { waitUntil: 'networkidle' });
+await guest.waitForTimeout(800);
+check('共有リンクはログインなしで開ける', (await guest.locator('article h2').innerText()) === tacticTitle);
+const guestHex = await guest.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--team-hex').trim());
+check('共有画面は作った人のチームカラーで出る', guestHex === '#4d8dff', guestHex);
+const hScroll = await guest.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+check('スマホ幅で横スクロールしない', hScroll <= 1, `${hScroll}px`);
+await guest.screenshot({ path: '/tmp/shared-mobile.png', fullPage: true });
+await guest.close();
+
+// 共有カード画像が作れる（ダウンロードが発生する）
+const [download] = await Promise.all([
+  page.waitForEvent('download', { timeout: 8000 }).catch(() => null),
+  page.getByRole('button', { name: '画像を保存' }).click(),
+]);
+check('共有カード画像を保存できる', !!download, download ? download.suggestedFilename() : 'なし');
+if (download) await download.saveAs('/tmp/share-card.png');
 
 check('コンソールエラーなし', errors.length === 0, errors.slice(0, 3).join(' | '));
 

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import { ZONES, allowedAt, correctPosition, togglePosition, zoneAt, zoneRect } from '../data/zones';
 import type { Player, TeamId, Vec2 } from '../types';
+import { awayHex, awayInk, teamHex, teamInk } from '../theme';
 
 /** ピッチ座標(y上向き) → SVG座標(y下向き) */
 const Y = (y: number) => PITCH_WIDTH - y;
@@ -90,7 +91,7 @@ export default function FreeEditPitch({ players, team, onChange, showZones = tru
 
   return (
     <div className="space-y-2">
-      <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#14361f]">
+      <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#16221c]">
         <svg
           ref={svgRef}
           className="no-select block w-full touch-none"
@@ -161,8 +162,8 @@ export default function FreeEditPitch({ players, team, onChange, showZones = tru
                   cx={p.pos.x}
                   cy={Y(p.pos.y)}
                   r={2.2}
-                  fill={team === 'home' ? '#0ea5e9' : '#f43f5e'}
-                  stroke="rgba(255,255,255,0.85)"
+                  fill={team === 'home' ? teamHex() : awayHex()}
+                  stroke="rgba(20,18,24,0.6)"
                   strokeWidth={0.3}
                 />
                 {multi && (
@@ -182,7 +183,7 @@ export default function FreeEditPitch({ players, team, onChange, showZones = tru
                   textAnchor="middle"
                   fontSize={2.3}
                   fontWeight={700}
-                  fill="#ffffff"
+                  fill={team === 'home' ? teamInk() : awayInk()}
                   pointerEvents="none"
                   fontFamily="ui-monospace, monospace"
                 >

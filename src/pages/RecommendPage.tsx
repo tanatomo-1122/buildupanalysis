@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { BoardSeed } from '../App';
 import { usablePlayers } from '../api/squad';
+import { buildPayload, createTactic } from '../api/tactics';
 import FreeEditPitch from '../components/FreeEditPitch';
 import LineupPitch from '../components/LineupPitch';
-import { Button, Card, Notice, Select } from '../components/ui';
+import OpponentPicker from '../components/OpponentPicker';
+import { Button, Card, Notice, Select, TextField } from '../components/ui';
 import { FORMATIONS, FORMATION_FAMILIES, formationById } from '../data/formations';
 import { fitLabel } from '../data/positions';
 import { skillById } from '../data/skills';
@@ -10,10 +13,10 @@ import { SCENES, TEAM_STYLES, styleById } from '../data/styles';
 import type { DensityReport } from '../logic/density';
 import { VALUE_MODELS, opponentLineup, recommendPhasePlan, scoreUnit } from '../logic/recommend';
 import type { FormationRecommendation, PhasePlan } from '../logic/recommend';
-import type { Player, SceneId, SquadPlayer, ValueModel } from '../types';
+import type { Player, SceneId, SquadPlayer, UserProfile, ValueModel } from '../types';
 
-const ATTACK_COLOR = '#0284c7';
-const DEFENSE_COLOR = '#e11d48';
+const ATTACK_COLOR = 'var(--team-hex)';
+const DEFENSE_COLOR = 'var(--away-hex)';
 
 const fmt = (n: number, d = 1) => (n >= 0 ? '+' : '') + n.toFixed(d);
 
@@ -52,8 +55,22 @@ function Bar({ amount, max, color }: { amount: number; max: number; color: strin
 
 interface Props {
   squad: SquadPlayer[];
-  onOpenBoard: (rec: FormationRecommendation, ctx: BoardContext) => void;
+  /** 選手データの読み込み中 */
+  loading: boolean;
+  profile: UserProfile;
+  onOpenBoard: (seed: BoardSeed) => void;
+  /** 保存したらマイ戦術でその戦術を開く */
+  onSaved: (tacticId: string) => void;
+  onGoSquad: () => void;
 }
+
+/** 提案結果を盤面に渡す形へ */
+const seedOf = (rec: FormationRecommendation, ctx: BoardContext): BoardSeed => ({
+  lineup: rec.lineup,
+  formationId: rec.formationId,
+  label: rec.label,
+  ctx,
+});
 
 export interface BoardContext {
   homeStyle: string;
@@ -84,13 +101,12 @@ const LIST_MODES: { id: ListMode; label: string }[] = [
   { id: 'all', label: 'すべて' },
 ];
 
-export default function RecommendPage({ squad, onOpenBoard }: Props) {
+export default function RecommendPage({ squad, loading, profile, onOpenBoard, onSaved, onGoSquad }: Props) {
   const roster = useMemo(() => usablePlayers(squad), [squad]);
 
   const [homeStyle, setHomeStyle] = useState('possession');
   const [opponentStyle, setOpponentStyle] = useState('shortCounter');
-  /** 相手の形は「数値（名前）」→「ポジションパターン」の2段で選ぶ */
-  const [opponentName, setOpponentName] = useState('4-2-3-1');
+  /** 相手の形。人数入力（OpponentPicker）で決まる */
   const [opponentFormation, setOpponentFormation] = useState(
     () => FORMATIONS.find((f) => f.family === '4-2-3-1')!.id,
   );
@@ -161,11 +177,20 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
     }, 30);
   };
 
+  if (loading) return <Notice>選手を読み込んでいます…</Notice>;
+
   if (roster.length < 11) {
     return (
-      <Notice tone="warn">
-        起用できる選手が {roster.length} 名です。「選手登録」タブで 11 名以上の名前を入力してください。
-      </Notice>
+      <section className="rounded-3xl border border-dashed border-edge px-6 py-10 text-center [--numeral-fill:#141218]">
+        <div className="numeral text-[96px]">{roster.length}/11</div>
+        <p className="mt-2 text-[15px] font-bold text-slate-100">起用できる選手がまだ足りません</p>
+        <p className="mt-1 text-[13px] text-slate-400">「選手」で11名以上の名前を入れると、戦術を提案できます。</p>
+        <div className="mt-5">
+          <Button tone="primary" size="md" onClick={onGoSquad}>
+            選手を登録する
+          </Button>
+        </div>
+      </section>
     );
   }
 
@@ -191,99 +216,91 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
 
   return (
     <div className="space-y-4">
-      <Card
-        title="条件"
-        subtitle={`登録選手 ${roster.length} 名から、指定したチームスタイルの中で相手の布陣に最も噛み合う形を探します。`}
-        actions={
-          <Button tone="primary" size="md" onClick={run} disabled={running}>
-            {running ? '計算中…' : '最適フォーメーションを提案'}
-          </Button>
-        }
-      >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Select
-            label="自チームのチームスタイル"
-            value={homeStyle}
-            options={TEAM_STYLES.map((s) => ({ value: s.id, label: s.label }))}
-            hint={styleById(homeStyle).phases.attack.desc}
-            onChange={setHomeStyle}
-          />
-          <Select
-            label="相手のフォーメーション"
-            value={opponentName}
-            options={FORMATION_FAMILIES.map((f) => ({ value: f.family, label: f.familyLabel }))}
-            hint="まず数値を選びます"
-            onChange={(name) => {
-              setOpponentName(name);
-              const first = FORMATIONS.find((f) => f.family === name);
-              if (first) setOpponentFormation(first.id);
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+        <div className="min-w-0 space-y-4 rounded-2xl border border-edge bg-panel p-4 sm:p-5">
+          <OpponentPicker value={opponentFormation} onChange={setOpponentFormation} />
+          <div className="grid gap-3 border-t border-edge pt-4 sm:grid-cols-2">
+            <Select
+              label="自チームのチームスタイル"
+              value={homeStyle}
+              options={TEAM_STYLES.map((s) => ({ value: s.id, label: s.label }))}
+              hint={styleById(homeStyle).phases.attack.desc}
+              onChange={setHomeStyle}
+            />
+            <Select
+              label="相手のチームスタイル"
+              value={opponentStyle}
+              options={TEAM_STYLES.map((s) => ({ value: s.id, label: s.label }))}
+              hint={styleById(opponentStyle).phases.defense.desc}
+              onChange={setOpponentStyle}
+            />
+          </div>
+          <details className="group rounded-xl border border-edge bg-panel2 px-3 py-2">
+            <summary className="cursor-pointer select-none text-[12px] font-bold text-slate-400 group-open:mb-3">
+              詳しい条件（局面・評価モデル）
+            </summary>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select<SceneId>
+                label="局面"
+                value={scene}
+                options={SCENES.map((s) => ({ value: s.id, label: s.label }))}
+                onChange={setScene}
+              />
+              <Select<ValueModel>
+                label="評価モデル（試験）"
+                value={valueModel}
+                options={VALUE_MODELS.map((m) => ({ value: m.id, label: m.label }))}
+                hint={VALUE_MODELS.find((m) => m.id === valueModel)?.desc}
+                onChange={setValueModel}
+              />
+            </div>
+          </details>
+          <button
+            type="button"
+            onClick={run}
+            disabled={running}
+            className="w-full rounded-xl bg-team px-5 py-4 text-[16px] font-black tracking-wide text-team-ink transition-[filter] hover:brightness-110 disabled:opacity-50"
+          >
+            {running ? '計算中…' : 'この相手に効く形を探す'}
+          </button>
+          <p className="text-center text-[11px] text-slate-500">登録選手 {roster.length} 名から、攻撃時と守備時の形を探します</p>
+        </div>
+
+        <div className="min-w-0 space-y-2 rounded-2xl border border-edge bg-panel p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[14px] font-bold text-slate-100">相手の配置</div>
+              <div className="text-[11px] text-slate-500">
+                ドラッグで細かく動かせます（任意）。置けない場所に落とすと自動で是正されます。
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {edited && (
+                <Button
+                  onClick={() => {
+                    setAway(opponentLineup(opponentFormation, AWAY_LINE));
+                    setEdited(false);
+                  }}
+                >
+                  配置を戻す
+                </Button>
+              )}
+              <Button onClick={() => setShowZones((v) => !v)}>
+                {showZones ? 'エリアを隠す' : 'エリアを表示'}
+              </Button>
+            </div>
+          </div>
+          <FreeEditPitch
+            players={away}
+            team="away"
+            showZones={showZones}
+            onChange={(next) => {
+              setAway(next);
+              setEdited(true);
             }}
           />
-          <Select
-            label="相手のポジションパターン"
-            value={opponentFormation}
-            options={FORMATIONS.filter(
-              (f, _i, arr) =>
-                f.family === opponentName &&
-                arr.find((x) => x.symmetryKey === f.symmetryKey) === f,
-            ).map((f) => ({ value: f.id, label: f.typeLabel }))}
-            hint="同じ数値でも中身で別の形になります"
-            onChange={setOpponentFormation}
-          />
-          <Select
-            label="相手のチームスタイル"
-            value={opponentStyle}
-            options={TEAM_STYLES.map((s) => ({ value: s.id, label: s.label }))}
-            hint={styleById(opponentStyle).phases.defense.desc}
-            onChange={setOpponentStyle}
-          />
-          <Select<SceneId>
-            label="局面"
-            value={scene}
-            options={SCENES.map((s) => ({ value: s.id, label: s.label }))}
-            onChange={setScene}
-          />
-          <Select<ValueModel>
-            label="評価モデル（試験）"
-            value={valueModel}
-            options={VALUE_MODELS.map((m) => ({ value: m.id, label: m.label }))}
-            hint={VALUE_MODELS.find((m) => m.id === valueModel)?.desc}
-            onChange={setValueModel}
-          />
         </div>
-      </Card>
-
-      <Card
-        title={`相手の配置　${opponentLabel}`}
-        subtitle="トークンはドラッグで自由に動かせます。エリアごとに置けるポジションが決まっていて、はみ出したら自動で是正されます。極端な片攻めや3CFのような変則配置もそのまま解析できます。"
-        actions={
-          <div className="flex gap-2">
-            {edited && (
-              <Button
-                onClick={() => {
-                  setAway(opponentLineup(opponentFormation, AWAY_LINE));
-                  setEdited(false);
-                }}
-              >
-                プリセットに戻す
-              </Button>
-            )}
-            <Button tone={showZones ? 'primary' : undefined} onClick={() => setShowZones((v) => !v)}>
-              {showZones ? 'エリアを隠す' : 'エリアを表示'}
-            </Button>
-          </div>
-        }
-      >
-        <FreeEditPitch
-          players={away}
-          team="away"
-          showZones={showZones}
-          onChange={(next) => {
-            setAway(next);
-            setEdited(true);
-          }}
-        />
-      </Card>
+      </section>
 
       {error && <Notice tone="error">{error}</Notice>}
 
@@ -292,6 +309,27 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
           <DensityCard density={result.density} />
 
           <PhaseCard plan={result} />
+
+          <SaveCard
+            key={`${result.attack.formationId}|${result.defense.formationId}|${opponentFormation}`}
+            defaultTitle={`対${opponentBase.familyLabel} ${result.attack.familyLabel}/${result.defense.familyLabel}`}
+            onSave={async (title) => {
+              const t = await createTactic({
+                title,
+                payload: buildPayload(result, {
+                  homeStyle,
+                  opponentStyle,
+                  scene,
+                  opponentFormation,
+                  opponentLabel,
+                  opponentPlayers: away,
+                }),
+                authorName: profile.userName,
+                teamColor: profile.teamColor,
+              });
+              onSaved(t.id);
+            }}
+          />
 
           <BestCard
             rec={phase === 'attack' ? result.attack : result.defense}
@@ -367,7 +405,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                       <tr
                         key={r.formationId}
                         title={r.desc}
-                        className={`border-t border-edge/60 ${best ? 'bg-sky-500/10' : ''}`}
+                        className={`border-t border-edge/60 ${best ? 'bg-team/10' : ''}`}
                       >
                         <td className="whitespace-nowrap px-2 py-1.5">
                           <span className="font-mono font-semibold text-slate-200">
@@ -386,7 +424,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                             </span>
                           )}
                           {best && (
-                            <span className="ml-1.5 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-200">
+                            <span className="ml-1.5 rounded bg-team/20 px-1.5 py-0.5 text-[10px] text-team">
                               推奨
                             </span>
                           )}
@@ -425,7 +463,7 @@ export default function RecommendPage({ squad, onOpenBoard }: Props) {
                           {fmt(r.score)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          <Button onClick={() => onOpenBoard(r, ctx)}>盤面で見る</Button>
+                          <Button onClick={() => onOpenBoard(seedOf(r, ctx))}>盤面で見る</Button>
                         </td>
                       </tr>
                     );
@@ -484,10 +522,10 @@ function DensityCard({ density }: { density: DensityReport }) {
   ];
 
   const tone = (count: number) => {
-    if (count === 0) return { bg: 'rgba(2,132,199,0.28)', fg: '#bae6fd' };
-    if (count === 1) return { bg: 'rgba(2,132,199,0.12)', fg: '#cbd5e1' };
-    if (count === 2) return { bg: 'rgba(148,163,184,0.14)', fg: '#cbd5e1' };
-    return { bg: 'rgba(225,29,72,0.28)', fg: '#fecdd3' };
+    if (count === 0) return { bg: 'rgb(var(--team) / 0.3)', fg: 'var(--team-hex)' };
+    if (count === 1) return { bg: 'rgb(var(--team) / 0.12)', fg: '#e4dff0' };
+    if (count === 2) return { bg: 'rgba(164,156,182,0.12)', fg: '#c9c2d8' };
+    return { bg: 'rgba(255,59,92,0.26)', fg: '#ffc2cd' };
   };
 
   return (
@@ -587,12 +625,12 @@ function PhaseCard({ plan }: { plan: PhasePlan }) {
           { key: 'attack', label: '攻撃時', rec: plan.attack, color: ATTACK_COLOR },
           { key: 'defense', label: '守備時', rec: plan.defense, color: DEFENSE_COLOR },
         ] as const).map((p) => (
-          <div key={p.key} className="rounded-md border border-edge bg-panel/50 p-3">
+          <div key={p.key} className="rounded-xl border border-edge bg-panel2 p-4 [--numeral-fill:#221e2a]">
             <div className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
               <span className="text-[10px] uppercase tracking-wider text-slate-500">{p.label}</span>
             </div>
-            <div className="mt-1 font-mono text-[20px] font-bold text-slate-100">
+            <div className={`mt-1 text-[64px] ${p.key === 'attack' ? 'numeral' : 'numeral-solid text-slate-100'}`}>
               {p.rec.familyLabel}
             </div>
             <div className="text-[12px] text-slate-300">{p.rec.typeLabel}</div>
@@ -628,10 +666,10 @@ function PhaseCard({ plan }: { plan: PhasePlan }) {
                 <tr key={m.player.id} className="border-t border-edge/60">
                   <td className="px-2 py-1.5 text-slate-200">{m.player.name}</td>
                   <td className="px-2 py-1.5 font-mono text-slate-500">{m.player.position}</td>
-                  <td className="px-2 py-1.5 font-mono font-semibold text-sky-200">
+                  <td className="px-2 py-1.5 font-mono font-semibold text-team">
                     {m.attack.position}
                   </td>
-                  <td className="px-2 py-1.5 font-mono font-semibold text-rose-200">
+                  <td className="px-2 py-1.5 font-mono font-semibold text-away">
                     {m.defense.position}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono tabular-nums text-slate-400">
@@ -661,7 +699,7 @@ function BestCard({
   ctx: BoardContext;
   valueModel: ValueModel;
   phase: 'attack' | 'defense';
-  onOpenBoard: (rec: FormationRecommendation, ctx: BoardContext) => void;
+  onOpenBoard: (seed: BoardSeed) => void;
 }) {
   const labels = labelsFor(valueModel);
   return (
@@ -670,7 +708,7 @@ function BestCard({
         rec.lineShift === 0 ? '' : `　ライン${rec.lineShift > 0 ? '+' : ''}${rec.lineShift}m`
       }`}
       subtitle={rec.desc}
-      actions={<Button tone="primary" onClick={() => onOpenBoard(rec, ctx)}>盤面で見る</Button>}
+      actions={<Button tone="primary" onClick={() => onOpenBoard(seedOf(rec, ctx))}>盤面で見る</Button>}
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-3">
@@ -770,5 +808,49 @@ function Stat({
       <div className="mt-1 font-mono text-[16px] font-bold tabular-nums text-slate-100">{value}</div>
       <div className="text-[10px] text-slate-500">{note}</div>
     </div>
+  );
+}
+
+/** 提案結果をマイ戦術に残す */
+function SaveCard({
+  defaultTitle,
+  onSave,
+}: {
+  defaultTitle: string;
+  onSave: (title: string) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(defaultTitle);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (!title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(title.trim());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="rounded-2xl border border-team/50 bg-team/[0.06] p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[240px] flex-1">
+          <TextField label="この戦術に名前をつけて保存" value={title} onChange={setTitle} onEnter={save} />
+        </div>
+        <Button tone="primary" size="md" disabled={busy || !title.trim()} onClick={save}>
+          {busy ? '保存中…' : 'この戦術を保存'}
+        </Button>
+      </div>
+      <p className="mt-2 text-[11px] text-slate-500">
+        保存した戦術は「マイ戦術」からいつでも開けます。共有するまで他の人には見えません。
+      </p>
+      {error && (
+        <div className="mt-2">
+          <Notice tone="error">{error}</Notice>
+        </div>
+      )}
+    </section>
   );
 }

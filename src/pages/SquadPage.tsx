@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { SQUAD_SIZE, blankSquad, loadSquad, saveSquad, usablePlayers } from '../api/squad';
+import { useMemo, useState } from 'react';
+import { SQUAD_SIZE, saveSquad, usablePlayers } from '../api/squad';
 import { MAX_SUB_POSITIONS } from '../data/positions';
 import { DEFAULT_SKILLS, skillOptions } from '../data/skills';
 import { Button, Card, Notice } from '../components/ui';
@@ -9,37 +9,16 @@ import { POSITION_ORDER } from '../types';
 interface Props {
   profile: UserProfile;
   squad: SquadPlayer[];
+  /** 選手データは App がログイン直後に読む。その読み込み中か */
+  loading: boolean;
   onSquadChange: (squad: SquadPlayer[]) => void;
 }
 
-export default function SquadPage({ profile, squad, onSquadChange }: Props) {
+export default function SquadPage({ profile, squad, loading, onSquadChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    loadSquad(profile.id)
-      .then((s) => {
-        if (!cancelled) onSquadChange(s);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e));
-          onSquadChange(blankSquad());
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.id]);
 
   const filled = useMemo(() => usablePlayers(squad).length, [squad]);
 
@@ -85,8 +64,8 @@ export default function SquadPage({ profile, squad, onSquadChange }: Props) {
       {error && <Notice tone="error">{error}</Notice>}
 
       <Card
-        title="選手登録"
-        subtitle={`${profile.userName} / ${SQUAD_SIZE}名まで登録できます。名前が入っている選手だけが起用対象になります。`}
+        title="マイスカッド"
+        subtitle={`${SQUAD_SIZE}名まで登録できます。名前が入っている選手だけが起用対象になります。`}
         actions={
           <div className="flex items-center gap-3">
             <span className={`text-[12px] ${filled >= 11 ? 'text-slate-400' : 'text-amber-300'}`}>
@@ -128,7 +107,7 @@ export default function SquadPage({ profile, squad, onSquadChange }: Props) {
                       <td className="px-2 py-1.5">
                         <input
                           type="text"
-                          className="w-full rounded border border-edge bg-panel2 px-2 py-1 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500/60"
+                          className="w-full rounded border border-edge bg-panel2 px-2 py-1 text-[12px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-team"
                           value={p.name}
                           placeholder="未登録"
                           onChange={(e) => patch(i, { name: e.target.value })}
@@ -234,10 +213,10 @@ function SubPositions({
             onClick={() => toggle(pos)}
             className={`rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors ${
               on
-                ? 'border-sky-500/60 bg-sky-500/20 text-sky-200'
+                ? 'border-team/70 bg-team/20 text-team'
                 : full
                   ? 'cursor-not-allowed border-edge/50 text-slate-700'
-                  : 'border-edge bg-panel2 text-slate-400 hover:bg-[#243040]'
+                  : 'border-edge bg-panel2 text-slate-400 hover:bg-[#2b2636]'
             }`}
           >
             {pos}

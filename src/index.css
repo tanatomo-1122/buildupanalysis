@@ -4,6 +4,11 @@
 
 :root {
   color-scheme: dark;
+  /* 既定のチームカラー。ログイン後に src/theme.ts が差し替える */
+  --team: 255 90 31;
+  --team-hex: #ff5a1f;
+  --team-ink: #1a0a03;
+  --away-hex: #d9d3e6;
 }
 
 html,
@@ -14,8 +19,9 @@ body,
 
 body {
   margin: 0;
-  background: #0b0f14;
-  color: #e6edf3;
+  background: #141218;
+  color: #f6f2ff;
+  font-family: 'Noto Sans JP', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -26,7 +32,7 @@ input[type='range'] {
   width: 100%;
   height: 4px;
   border-radius: 999px;
-  background: #2b3540;
+  background: #332e3d;
   outline: none;
 }
 input[type='range']::-webkit-slider-thumb {
@@ -35,7 +41,7 @@ input[type='range']::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #e6edf3;
+  background: var(--team-hex);
   cursor: pointer;
   border: none;
 }
@@ -43,16 +49,16 @@ input[type='range']::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #e6edf3;
+  background: var(--team-hex);
   cursor: pointer;
   border: none;
 }
 
 select,
 input[type='number'] {
-  background: #1c232c;
-  border: 1px solid #2b3540;
-  border-radius: 6px;
+  background: #221e2a;
+  border: 1px solid #332e3d;
+  border-radius: 8px;
   padding: 4px 8px;
   color: inherit;
   font-size: 13px;
@@ -61,4 +67,33 @@ input[type='number'] {
 .no-select {
   user-select: none;
   -webkit-user-select: none;
+}
+
+/*
+ * 背番号のような抜き文字。フォーメーション名の見せ場にだけ使う。
+ * Teko は字形の輪郭が重なっているので、線を太めに引いてから地の色で塗りつぶし、
+ * 内側に出る重なりの線を隠す（paint-order: stroke fill）。
+ * 塗りの色は置き場所の地の色に合わせて --numeral-fill で変える（既定は panel）。
+ */
+.numeral {
+  font-family: Teko, 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  line-height: 0.85;
+  letter-spacing: 0.01em;
+  color: var(--numeral-fill, #1a1720);
+  -webkit-text-stroke: 3px var(--team-hex);
+  paint-order: stroke fill;
+  font-variant-numeric: tabular-nums;
+}
+.numeral-solid {
+  font-family: Teko, 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  line-height: 0.85;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--team-hex);
+  outline-offset: 2px;
 }

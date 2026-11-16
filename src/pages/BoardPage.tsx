@@ -97,7 +97,7 @@ export default function BoardPage({ board, onBoardChange, seededFrom }: Props) {
     <span className="flex items-center gap-1.5 text-slate-400">
       <span
         className="inline-block h-2 w-2 rounded-full"
-        style={{ background: team === 'home' ? '#0ea5e9' : '#f43f5e' }}
+        style={{ background: team === 'home' ? 'var(--team-hex)' : 'var(--away-hex)' }}
       />
       {formation} ／ {styleById(styleId).label}
       <span
@@ -145,11 +145,11 @@ export default function BoardPage({ board, onBoardChange, seededFrom }: Props) {
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[11px] text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-sky-500" />
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-team" />
               自チーム（攻撃方向 →）
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500" />
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-away" />
               相手チーム（攻撃方向 ←）
             </span>
             <span className="flex items-center gap-1.5">

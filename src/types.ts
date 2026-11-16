@@ -90,8 +90,12 @@ export interface StyleDef {
 /** eFootball のユーザーネームと ID で識別するプロフィール */
 export interface UserProfile {
   id: string;
+  /** クラブ名。画面右上と共有カードに出る */
   userName: string;
+  /** 任意。以前のデータの引き継ぎにだけ使う */
   efootballId: string;
+  /** チームカラーの ID（src/theme.ts の TEAM_COLORS） */
+  teamColor: string;
   createdAt: string;
 }
 

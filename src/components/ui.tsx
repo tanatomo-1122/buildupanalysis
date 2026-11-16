@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-edge bg-panel2/60 p-3">
+    <section className="rounded-xl border border-edge bg-panel p-3">
       <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
         {title}
       </h3>
@@ -23,11 +23,11 @@ export function Card({
   actions?: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-edge bg-panel2/60">
-      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-edge px-4 py-3">
-        <div>
-          <h2 className="text-[13px] font-semibold text-slate-200">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{subtitle}</p>}
+    <section className="rounded-2xl border border-edge bg-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-edge px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-[14px] font-bold tracking-wide text-slate-100">{title}</h2>
+          {subtitle && <p className="mt-0.5 max-w-[80ch] text-[11px] leading-snug text-slate-500">{subtitle}</p>}
         </div>
         {actions}
       </div>
@@ -94,7 +94,7 @@ export function Toggle({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400"
+        className="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--team-hex)]"
       />
       <span>
         <span className="text-[13px] text-slate-200">{label}</span>
@@ -166,7 +166,7 @@ export function TextField({
       {label && <span className="mb-1 block text-[13px] text-slate-200">{label}</span>}
       <input
         type="text"
-        className="w-full rounded-md border border-edge bg-panel2 px-2.5 py-1.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500/60"
+        className="w-full rounded-lg border border-edge bg-panel2 px-3 py-2 text-[14px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-team"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -193,14 +193,14 @@ export function Button({
   size?: 'sm' | 'md';
 }) {
   const base =
-    'rounded-md border font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40';
-  const sizing = size === 'md' ? 'px-4 py-2 text-[13px]' : 'px-2.5 py-1.5 text-[12px]';
+    'whitespace-nowrap rounded-lg border font-semibold transition-[background-color,filter,color] disabled:cursor-not-allowed disabled:opacity-40';
+  const sizing = size === 'md' ? 'px-5 py-2.5 text-[14px] tracking-wide' : 'px-3 py-1.5 text-[12px]';
   const styles =
     tone === 'primary'
-      ? 'border-sky-500/60 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
+      ? 'border-team bg-team text-team-ink hover:brightness-110'
       : tone === 'danger'
         ? 'border-rose-500/50 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20'
-        : 'border-edge bg-panel2 text-slate-300 hover:bg-[#243040]';
+        : 'border-edge bg-panel2 text-slate-300 hover:bg-[#2b2636]';
   return (
     <button
       type="button"
@@ -225,8 +225,8 @@ export function Notice({
       ? 'border-rose-500/40 bg-rose-500/10 text-rose-200'
       : tone === 'warn'
         ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-        : 'border-edge bg-panel2/60 text-slate-400';
+        : 'border-edge bg-panel text-slate-400';
   return (
-    <div className={`rounded-md border p-3 text-[12px] leading-relaxed ${styles}`}>{children}</div>
+    <div className={`rounded-xl border p-3 text-[12px] leading-relaxed ${styles}`}>{children}</div>
   );
 }

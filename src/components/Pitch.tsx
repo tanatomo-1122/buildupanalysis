@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { PITCH_LENGTH, PITCH_WIDTH } from '../constants';
 import type { Evaluation, Player, Vec2, ViewOptions } from '../types';
 import Heatmap from './Heatmap';
+import { awayHex, awayInk, teamHex, teamInk } from '../theme';
 
 /** ピッチ座標(y上向き) → SVG座標(y下向き) */
 const Y = (y: number) => PITCH_WIDTH - y;
@@ -141,7 +142,7 @@ export default function Pitch({
     });
 
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#14361f] shadow-lg">
+    <div className="relative w-full overflow-hidden rounded-xl border border-edge bg-[#16221c] shadow-lg">
       <div className="relative w-full" style={{ aspectRatio: `${PITCH_LENGTH} / ${PITCH_WIDTH}` }}>
         <Heatmap
           homePoints={homePoints}
@@ -304,8 +305,8 @@ export default function Pitch({
                   cx={p.pos.x}
                   cy={Y(p.pos.y)}
                   r={2.0}
-                  fill={isHome ? '#0ea5e9' : '#f43f5e'}
-                  stroke={isHolder ? '#fde047' : 'rgba(255,255,255,0.85)'}
+                  fill={isHome ? teamHex() : awayHex()}
+                  stroke={isHolder ? '#fde047' : 'rgba(20,18,24,0.6)'}
                   strokeWidth={isHolder ? 0.55 : 0.3}
                 />
                 <text
@@ -314,7 +315,7 @@ export default function Pitch({
                   textAnchor="middle"
                   fontSize={2.2}
                   fontWeight={700}
-                  fill="#ffffff"
+                  fill={isHome ? teamInk() : awayInk()}
                   pointerEvents="none"
                   fontFamily="ui-monospace, monospace"
                 >

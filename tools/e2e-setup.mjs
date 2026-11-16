@@ -1,6 +1,6 @@
 /**
  * E2E 用のデータ投入。モック Supabase に 23 名ぶんの選手を入れて、
- * 使うプロフィールの ID を標準出力に出す。
+ * ログイン済みセッション（localStorage に入れる形）を標準出力に出す。
  */
 const API = process.env.MOCK_API ?? 'http://localhost:54321/rest/v1';
 
@@ -16,10 +16,22 @@ const ROSTER = [
 
 const DEFAULT_SKILLS = JSON.parse(process.env.DEFAULT_SKILLS_JSON ?? '{}');
 
+/** 署名なしの JWT（モックは中身の sub だけを見る） */
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+const USER_ID = `e2e-user-${Date.now()}`;
+const token = `${b64({ alg: 'none' })}.${b64({
+  sub: USER_ID,
+  user_metadata: { full_name: 'E2E監督' },
+})}.sig`;
+
 const post = async (table, body) => {
   const res = await fetch(`${API}/${table}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    headers: {
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`);
@@ -43,4 +55,12 @@ for (let i = 0; i < ROSTER.length; i++) {
   });
 }
 
-console.log(JSON.stringify(profile));
+// ブラウザの localStorage にそのまま入れるセッション
+console.log(
+  JSON.stringify({
+    accessToken: token,
+    refreshToken: 'mock-refresh',
+    expiresAt: Math.floor(Date.now() / 1000) + 24 * 3600,
+    user: { id: USER_ID, name: 'E2E監督' },
+  }),
+);

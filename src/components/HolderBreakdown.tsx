@@ -8,8 +8,8 @@ import type { TeamId, Vec2 } from '../types';
  * ゼロ基準の発散棒で描く。正負で色を分け、平均位置に参照線を引く。
  */
 
-const POSITIVE = '#0284c7';
-const NEGATIVE = '#e11d48';
+const POSITIVE = 'var(--team-hex)';
+const NEGATIVE = '#ff3b5c';
 
 const fmt = (n: number, d = 1) => (n >= 0 ? '+' : '') + n.toFixed(d);
 
@@ -97,12 +97,12 @@ export default function HolderBreakdown({ average, team, active, currentBall, on
               const left = Math.min(zero, pct(e.total));
               const width = Math.abs(pct(e.total) - zero);
               return (
-                <tr key={e.playerId} className={`border-t border-edge/60 ${here ? 'bg-sky-500/10' : ''}`}>
+                <tr key={e.playerId} className={`border-t border-edge/60 ${here ? 'bg-team/10' : ''}`}>
                   <td className="whitespace-nowrap px-2 py-1.5">
                     <span className="font-mono font-semibold text-slate-200">#{e.number}</span>
                     <span className="ml-1.5 font-mono text-slate-400">{e.position}</span>
                     {here && (
-                      <span className="ml-1.5 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-200">
+                      <span className="ml-1.5 rounded bg-team/20 px-1.5 py-0.5 text-[10px] text-team">
                         表示中
                       </span>
                     )}
@@ -137,7 +137,7 @@ export default function HolderBreakdown({ average, team, active, currentBall, on
                       type="button"
                       disabled={here}
                       onClick={() => onFocus(e.ball)}
-                      className="whitespace-nowrap rounded border border-edge bg-panel2 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:bg-[#243040] disabled:opacity-30"
+                      className="whitespace-nowrap rounded border border-edge bg-panel2 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:bg-[#2b2636] disabled:opacity-30"
                     >
                       盤面で見る
                     </button>
