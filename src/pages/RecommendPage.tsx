@@ -4,8 +4,9 @@ import { usablePlayers } from '../api/squad';
 import { buildPayload, createTactic } from '../api/tactics';
 import FreeEditPitch from '../components/FreeEditPitch';
 import LineupPitch from '../components/LineupPitch';
-import OpponentPicker from '../components/OpponentPicker';
-import { Button, Card, Notice, Select, TextField } from '../components/ui';
+import SaveCard from '../components/SaveCard';
+import FormationPicker from '../components/FormationPicker';
+import { Button, Card, Notice, Select } from '../components/ui';
 import { FORMATIONS, FORMATION_FAMILIES, formationById } from '../data/formations';
 import { fitLabel } from '../data/positions';
 import { skillById } from '../data/skills';
@@ -106,7 +107,7 @@ export default function RecommendPage({ squad, loading, profile, onOpenBoard, on
 
   const [homeStyle, setHomeStyle] = useState('possession');
   const [opponentStyle, setOpponentStyle] = useState('shortCounter');
-  /** 相手の形。人数入力（OpponentPicker）で決まる */
+  /** 相手の形。人数入力（FormationPicker）で決まる */
   const [opponentFormation, setOpponentFormation] = useState(
     () => FORMATIONS.find((f) => f.family === '4-2-3-1')!.id,
   );
@@ -218,7 +219,7 @@ export default function RecommendPage({ squad, loading, profile, onOpenBoard, on
     <div className="space-y-4">
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <div className="min-w-0 space-y-4 rounded-2xl border border-edge bg-panel p-4 sm:p-5">
-          <OpponentPicker value={opponentFormation} onChange={setOpponentFormation} />
+          <FormationPicker value={opponentFormation} onChange={setOpponentFormation} />
           <div className="grid gap-3 border-t border-edge pt-4 sm:grid-cols-2">
             <Select
               label="自チームのチームスタイル"
@@ -333,6 +334,7 @@ export default function RecommendPage({ squad, loading, profile, onOpenBoard, on
 
           <BestCard
             rec={phase === 'attack' ? result.attack : result.defense}
+            other={phase === 'attack' ? result.defense : result.attack}
             away={away}
             ctx={ctx}
             valueModel={result.valueModel}
@@ -463,7 +465,7 @@ export default function RecommendPage({ squad, loading, profile, onOpenBoard, on
                           {fmt(r.score)}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          <Button onClick={() => onOpenBoard(seedOf(r, ctx))}>盤面で見る</Button>
+                          <Button onClick={() => onOpenBoard({ ...seedOf(r, ctx), phase })}>ボードで動かす</Button>
                         </td>
                       </tr>
                     );
@@ -688,6 +690,7 @@ function PhaseCard({ plan }: { plan: PhasePlan }) {
 
 function BestCard({
   rec,
+  other,
   away,
   ctx,
   valueModel,
@@ -695,6 +698,8 @@ function BestCard({
   onOpenBoard,
 }: {
   rec: FormationRecommendation;
+  /** もう一方の局面の推奨。ボードで攻守を切り替えられるように一緒に渡す */
+  other: FormationRecommendation;
   away: ReturnType<typeof opponentLineup>;
   ctx: BoardContext;
   valueModel: ValueModel;
@@ -708,7 +713,14 @@ function BestCard({
         rec.lineShift === 0 ? '' : `　ライン${rec.lineShift > 0 ? '+' : ''}${rec.lineShift}m`
       }`}
       subtitle={rec.desc}
-      actions={<Button tone="primary" onClick={() => onOpenBoard(seedOf(rec, ctx))}>盤面で見る</Button>}
+      actions={
+        <Button
+          tone="primary"
+          onClick={() => onOpenBoard({ ...seedOf(rec, ctx), phase, other: other.lineup })}
+        >
+          ボードで動かす
+        </Button>
+      }
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-3">
@@ -811,46 +823,3 @@ function Stat({
   );
 }
 
-/** 提案結果をマイ戦術に残す */
-function SaveCard({
-  defaultTitle,
-  onSave,
-}: {
-  defaultTitle: string;
-  onSave: (title: string) => Promise<void>;
-}) {
-  const [title, setTitle] = useState(defaultTitle);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    if (!title.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onSave(title.trim());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
-  };
-  return (
-    <section className="rounded-2xl border border-team/50 bg-team/[0.06] p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-[240px] flex-1">
-          <TextField label="この戦術に名前をつけて保存" value={title} onChange={setTitle} onEnter={save} />
-        </div>
-        <Button tone="primary" size="md" disabled={busy || !title.trim()} onClick={save}>
-          {busy ? '保存中…' : 'この戦術を保存'}
-        </Button>
-      </div>
-      <p className="mt-2 text-[11px] text-slate-500">
-        保存した戦術は「マイ戦術」からいつでも開けます。共有するまで他の人には見えません。
-      </p>
-      {error && (
-        <div className="mt-2">
-          <Notice tone="error">{error}</Notice>
-        </div>
-      )}
-    </section>
-  );
-}

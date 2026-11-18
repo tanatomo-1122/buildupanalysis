@@ -161,7 +161,13 @@ export const updateTactic = async (
   const body: Record<string, unknown> = {};
   if (patch.title !== undefined) body.title = patch.title;
   if (patch.isPublic !== undefined) body.is_public = patch.isPublic;
-  if (patch.payload !== undefined) body.payload = patch.payload;
+  if (patch.payload !== undefined) {
+    // 一覧に出す見出しも中身に合わせて更新する
+    body.payload = patch.payload;
+    body.opponent_label = patch.payload.opponent.label;
+    body.attack_label = patch.payload.attack.familyLabel;
+    body.defense_label = patch.payload.defense.familyLabel;
+  }
   const rows = await sbUpdate<TacticRow>('tactics', `id=eq.${encodeURIComponent(id)}`, body);
   return toTactic(rows[0]);
 };

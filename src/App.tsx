@@ -7,6 +7,7 @@ import { Notice } from './components/ui';
 import { DEFAULT_PARAMS } from './constants';
 import BoardPage from './pages/BoardPage';
 import ClubPage from './pages/ClubPage';
+import HomePage from './pages/HomePage';
 import MyTacticsPage from './pages/MyTacticsPage';
 import RecommendPage from './pages/RecommendPage';
 import type { BoardContext } from './pages/RecommendPage';
@@ -16,14 +17,22 @@ import { initialState } from './presets';
 import { applyTeamColor, teamColorById } from './theme';
 import type { BoardState, Player, SquadPlayer, UserProfile } from './types';
 
-type Tab = 'club' | 'squad' | 'recommend' | 'tactics' | 'board';
+type Tab = 'home' | 'club' | 'squad' | 'recommend' | 'tactics' | 'board';
 
-const TABS: { id: Tab; label: string; needsLogin: boolean }[] = [
-  { id: 'recommend', label: '戦術提案', needsLogin: true },
-  { id: 'tactics', label: 'マイ戦術', needsLogin: true },
-  { id: 'squad', label: '選手', needsLogin: true },
-  { id: 'board', label: '戦術ボード', needsLogin: false },
-  { id: 'club', label: 'クラブ', needsLogin: false },
+/** ログイン中に出すメニュー */
+const TABS_IN: { id: Tab; label: string }[] = [
+  { id: 'home', label: 'ホーム' },
+  { id: 'recommend', label: '戦術提案' },
+  { id: 'board', label: '戦術ボード' },
+  { id: 'tactics', label: 'マイ戦術' },
+  { id: 'squad', label: '選手' },
+];
+
+/** 未ログインのときのメニュー。戦術ボードはログインなしでも触れる */
+const TABS_OUT: { id: Tab; label: string }[] = [
+  { id: 'home', label: 'ホーム' },
+  { id: 'board', label: '戦術ボード' },
+  { id: 'club', label: 'ログイン' },
 ];
 
 /** 盤面へ渡すもの。提案結果からも、保存した戦術からも作れる */
@@ -32,12 +41,19 @@ export interface BoardSeed {
   formationId: string;
   label: string;
   ctx: BoardContext;
+  /** lineup がどちらの局面の配置か（既定は攻撃時） */
+  phase?: 'attack' | 'defense';
+  /** もう一方の局面の11人（あれば、ボードで攻守を切り替えられる） */
+  other?: Player[];
+  /** マイ戦術から開いたとき、上書き保存に使う */
+  tacticId?: string;
+  tacticTitle?: string;
 }
 
 const sharedIdFromUrl = () => new URLSearchParams(location.search).get('t');
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('club');
+  const [tab, setTab] = useState<Tab>('home');
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -99,7 +115,7 @@ export default function App() {
         setSquad(s);
         setSquadState('ready');
         setBooted(true);
-        // 選手がそろっていれば提案から、まだなら選手登録から始める
+        // ログイン画面から来た直後なら、選手がそろっていれば提案から、まだなら選手登録から始める
         setTab((t) => (t === 'club' ? (usablePlayers(s).length >= 11 ? 'recommend' : 'squad') : t));
       })
       .catch((e) => {
@@ -120,7 +136,7 @@ export default function App() {
 
   const logout = useCallback(async () => {
     await signOut();
-    setTab('club');
+    setTab('home');
   }, []);
 
   /** 提案された布陣（または保存した戦術）を盤面に流し込む */
@@ -129,9 +145,13 @@ export default function App() {
     setBoard({
       players: [...seed.lineup, ...ctx.opponentPlayers],
       ball: { ...(seed.lineup.find((p) => p.position === 'CB')?.pos ?? seed.lineup[1].pos) },
+      homeOther: seed.other,
+      tacticId: seed.tacticId,
+      tacticTitle: seed.tacticTitle,
       params: {
         ...DEFAULT_PARAMS,
-        possessionTeam: 'home',
+        // 守備時の配置を開いたときは、相手がボールを持っている局面にする
+        possessionTeam: seed.phase === 'defense' ? 'away' : 'home',
         scene: ctx.scene,
         homeStyle: ctx.homeStyle,
         awayStyle: ctx.opponentStyle,
@@ -151,10 +171,15 @@ export default function App() {
     (t: Tactic, phase: 'attack' | 'defense') => {
       const p = t.payload;
       const f = phase === 'attack' ? p.attack : p.defense;
+      const other = phase === 'attack' ? p.defense : p.attack;
       openBoard({
         lineup: f.lineup,
+        other: other.lineup,
+        phase,
+        tacticId: t.id,
+        tacticTitle: t.title,
         formationId: f.formationId,
-        label: `${phase === 'attack' ? '攻撃時' : '守備時'} ${f.familyLabel}`,
+        label: `「${t.title}」の${phase === 'attack' ? '攻撃時' : '守備時'}`,
         ctx: {
           homeStyle: p.homeStyle,
           opponentStyle: p.opponentStyle,
@@ -173,7 +198,7 @@ export default function App() {
   const leaveShared = () => {
     history.replaceState(null, '', location.pathname);
     setSharedId(null);
-    setTab(session ? 'recommend' : 'club');
+    setTab('home');
   };
 
   const loggedIn = Boolean(session && profile);
@@ -184,7 +209,7 @@ export default function App() {
       <header className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-edge pb-3">
         <button
           type="button"
-          onClick={() => (sharedId ? leaveShared() : setTab(loggedIn ? 'recommend' : 'club'))}
+          onClick={() => (sharedId ? leaveShared() : setTab('home'))}
           className="flex items-baseline gap-3 text-left"
           aria-label="MY XI ホーム"
         >
@@ -196,7 +221,7 @@ export default function App() {
 
         {!sharedId && (
           <nav className="order-3 flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="メニュー">
-            {TABS.filter((t) => loggedIn || !t.needsLogin).map((t) => (
+            {(loggedIn ? TABS_IN : TABS_OUT).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -248,6 +273,18 @@ export default function App() {
         <Notice>読み込んでいます…</Notice>
       ) : (
         <>
+          {tab === 'home' && (
+            <HomePage
+              loggedIn={loggedIn}
+              clubName={profile?.userName ?? null}
+              squadCount={usablePlayers(squad).length}
+              authError={authError}
+              onRecommend={() => setTab('recommend')}
+              onBoard={() => setTab('board')}
+              onSquad={() => setTab('squad')}
+            />
+          )}
+
           {tab === 'club' && session && !booted && !loadError && <Notice>クラブを読み込んでいます…</Notice>}
 
           {tab === 'club' && (!session || booted) && (
@@ -292,7 +329,20 @@ export default function App() {
             />
           )}
 
-          {tab === 'board' && <BoardPage board={board} onBoardChange={setBoard} seededFrom={seededFrom} />}
+          {tab === 'board' && (
+            <BoardPage
+              board={board}
+              onBoardChange={setBoard}
+              seededFrom={seededFrom}
+              squad={loggedIn ? usablePlayers(squad) : []}
+              profile={profile}
+              onSaved={(id) => {
+                setFocusTactic(id);
+                setTab('tactics');
+              }}
+              onLogin={() => setTab('club')}
+            />
+          )}
         </>
       )}
     </div>

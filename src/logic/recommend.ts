@@ -326,6 +326,7 @@ const toLineup = (
       team: 'home' as TeamId,
       number: slot.number,
       name: sp.name,
+      squadId: sp.id,
       position: slot.position,
       attackSkill: sp.attackSkill,
       defenseSkill: sp.defenseSkill,

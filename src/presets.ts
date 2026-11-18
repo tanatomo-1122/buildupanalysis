@@ -1,93 +1,47 @@
 import { DEFAULT_PARAMS } from './constants';
-import { buildLineup } from './data/formations';
-import type { BoardState, Params, Vec2 } from './types';
+import { buildLineup, formationByPositions } from './data/formations';
+import type { BoardState, PositionId } from './types';
 
-export interface ScenePreset {
-  id: string;
-  label: string;
-  desc: string;
-  build: () => BoardState;
-}
+/**
+ * 戦術ボードを最初に開いたときの盤面。
+ *
+ * フォーメーションの ID は生成カタログのもの（`4-3-3#CB_CB_…`）なので、
+ * ここでは名前ではなく「ポジションの内訳」から引く。
+ * （以前は '4-4-2' のような名前を ID として渡していて、カタログ刷新後は
+ *   見つからず先頭の 2-6-2 に化けていた）
+ */
+const idOf = (positions: PositionId[]): string => {
+  const f = formationByPositions(['GK', ...positions]);
+  if (!f) throw new Error(`初期盤面の形がカタログにありません: ${positions.join(',')}`);
+  return f.id;
+};
 
-interface SceneSpec {
-  homeFormation: string;
-  homeLine: number;
-  awayFormation: string;
-  awayLine: number;
-  ball: Vec2;
-  params: Partial<Params>;
-}
+const HOME_433: PositionId[] = ['CB', 'CB', 'LSB', 'RSB', 'DMF', 'CMF', 'CMF', 'LWG', 'RWG', 'ST'];
+const AWAY_4231: PositionId[] = ['CB', 'CB', 'LSB', 'RSB', 'DMF', 'DMF', 'OMF', 'LMF', 'RMF', 'ST'];
 
-const make = (spec: SceneSpec): BoardState => ({
-  players: [
-    ...buildLineup('home', spec.homeFormation, spec.homeLine),
-    ...buildLineup('away', spec.awayFormation, spec.awayLine),
-  ],
-  ball: spec.ball,
-  params: { ...DEFAULT_PARAMS, ...spec.params },
-  homeFormation: spec.homeFormation,
-  awayFormation: spec.awayFormation,
-  homeLine: spec.homeLine,
-  awayLine: spec.awayLine,
-});
+/** 相手のラインの既定の高さ（戦術提案と同じ） */
+export const DEFAULT_AWAY_LINE = 8;
 
-export const SCENE_PRESETS: ScenePreset[] = [
-  {
-    id: 'p1',
-    label: 'ポゼッション × ショートカウンター',
-    desc: '4-2-1-3 のCB起点。相手はラインを高く保って前から来る。プレスを外せているか。',
-    build: () =>
-      make({
-        homeFormation: '4-2-1-3',
-        homeLine: 0,
-        awayFormation: '4-4-2',
-        awayLine: 14,
-        ball: { x: 17, y: 42 },
-        params: { scene: 'possession', homeStyle: 'possession', awayStyle: 'shortCounter' },
-      }),
-  },
-  {
-    id: 'p2',
-    label: 'オーバーロード × サイドアタック',
-    desc: '3-2-4-1 で中央に人を集める。相手は中盤にブロックを構える。狭い局面の数的優位を見る。',
-    build: () =>
-      make({
-        homeFormation: '3-2-4-1',
-        homeLine: 2,
-        awayFormation: '4-4-2',
-        awayLine: 0,
-        ball: { x: 18, y: 34 },
-        params: { scene: 'possession', homeStyle: 'overload', awayStyle: 'sideAttack' },
-      }),
-  },
-  {
-    id: 'p3',
-    label: 'サイドアタック × ロングボール（撤退）',
-    desc: '押し込んだ局面。相手は5-3-2で自陣に低いブロック。ΔXが伸びない状況の比較用。',
-    build: () =>
-      make({
-        homeFormation: '4-3-3',
-        homeLine: 22,
-        awayFormation: '5-3-2',
-        awayLine: -6,
-        ball: { x: 54, y: 34 },
-        params: { scene: 'possession', homeStyle: 'sideAttack', awayStyle: 'longBall' },
-      }),
-  },
-  {
-    id: 'p4',
-    label: 'ロングカウンター × ポゼッション（奪った直後）',
-    desc: '局面「トランジション」。自陣で奪い、相手は前がかりのまま。背後のスペースの価値を見る。',
-    build: () =>
-      make({
-        homeFormation: '4-2-3-1',
-        homeLine: 0,
-        awayFormation: '4-3-3',
-        awayLine: 16,
-        ball: { x: 33, y: 26 },
-        params: { scene: 'transition', homeStyle: 'longCounter', awayStyle: 'possession' },
-      }),
-  },
-];
-
-export const initialState = (): BoardState => SCENE_PRESETS[0].build();
+/** 自分 4-3-3（ポゼッション） 対 相手 4-2-3-1（ショートカウンター） */
+export const initialState = (): BoardState => {
+  const homeFormation = idOf(HOME_433);
+  const awayFormation = idOf(AWAY_4231);
+  return {
+    players: [
+      ...buildLineup('home', homeFormation, 0),
+      ...buildLineup('away', awayFormation, DEFAULT_AWAY_LINE),
+    ],
+    ball: { x: 17, y: 42 },
+    params: {
+      ...DEFAULT_PARAMS,
+      possessionTeam: 'home',
+      scene: 'possession',
+      homeStyle: 'possession',
+      awayStyle: 'shortCounter',
+    },
+    homeFormation,
+    awayFormation,
+    homeLine: 0,
+    awayLine: DEFAULT_AWAY_LINE,
+  };
+};

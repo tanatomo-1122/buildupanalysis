@@ -1,6 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { PITCH_LENGTH, PITCH_WIDTH } from '../constants';
+import { awayHex, teamHex } from '../theme';
 import type { Vec2 } from '../types';
+
+const rgbOf = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
 
 /** 1m あたりのピクセル数。低解像度で描いて CSS 拡大＝滑らかなグラデーションになる */
 const RES = 2;
@@ -14,7 +20,7 @@ interface Props {
 
 /**
  * Pitch Control の連続場をキャンバスに描く。
- * home 優勢 = シアン、away 優勢 = ローズ、拮抗 = 透明。
+ * home 優勢 = チームカラー、away 優勢 = 相手色、拮抗 = 透明。
  *
  * ドラッグ中も毎フレーム再計算するため、内側ループは手書きで最適化している
  * （pitchControl.ts と同じ式：w = exp(-d/λ)）。
@@ -42,6 +48,9 @@ export default function Heatmap({ homePoints, awayPoints, lambda, visible }: Pro
     if (raf.current !== null) cancelAnimationFrame(raf.current);
     raf.current = requestAnimationFrame(() => {
       const inv = 1 / Math.max(0.5, lambda);
+      // 描くたびにその時点のチームカラーを読む
+      const homeRgb = rgbOf(teamHex());
+      const awayRgb = rgbOf(awayHex());
       const img = ctx.createImageData(w, h);
       const data = img.data;
       const hx = homePoints.map((p) => p.x);
@@ -71,15 +80,10 @@ export default function Heatmap({ homePoints, awayPoints, lambda, visible }: Pro
           const denom = hSum + aSum;
           const t = denom < 1e-12 ? 0 : hSum / denom - 0.5;
           const idx = (py * w + px) * 4;
-          if (t >= 0) {
-            data[idx] = 56;
-            data[idx + 1] = 189;
-            data[idx + 2] = 248;
-          } else {
-            data[idx] = 251;
-            data[idx + 1] = 113;
-            data[idx + 2] = 133;
-          }
+          const c = t >= 0 ? homeRgb : awayRgb;
+          data[idx] = c[0];
+          data[idx + 1] = c[1];
+          data[idx + 2] = c[2];
           const a = Math.min(1, Math.abs(t) * 2);
           data[idx + 3] = (a * a * 0.55 + a * 0.45) * 170;
         }

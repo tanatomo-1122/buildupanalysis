@@ -128,6 +128,11 @@ export interface Player {
   number: number;
   /** 登録選手から起用された場合の選手名 */
   name?: string;
+  /**
+   * 登録選手の ID。攻撃時と守備時で枠（背番号）が変わっても同じ人だと分かるように持つ。
+   * 以前に保存した戦術には無いので、無ければ名前で照合する。
+   */
+  squadId?: string;
   position: PositionId;
   /** 攻撃時に発動する特性 ID（'none' で特性なし） */
   attackSkill: string;
@@ -228,6 +233,10 @@ export interface ViewOptions {
   positions: boolean;
   pcLabels: boolean;
   contribution: boolean;
+  /** ボールを描くか。起点平均のスコアはボール位置に依らないので、シンプル表示では隠す */
+  ball: boolean;
+  /** 選手名をトークンの下に出すか */
+  names: boolean;
 }
 
 /** 1 人分の評価結果 */
@@ -298,6 +307,16 @@ export interface BoardState {
   /** フォーメーション適用時の全体押し上げ量 [m] */
   homeLine: number;
   awayLine: number;
+  /**
+   * 自チームの「もう一方の局面」の11人。
+   * eFootball は攻撃時と守備時で別の形を組めるので、盤面でも局面ごとに配置を持つ。
+   * players に入っているのが表示中の局面（possessionTeam が home なら攻撃時）で、
+   * こちらは切り替えたときに入れ替わる。未設定なら切り替え時に表示中の配置を写す。
+   */
+  homeOther?: Player[];
+  /** マイ戦術から開いた場合の保存先（上書き保存に使う） */
+  tacticId?: string;
+  tacticTitle?: string;
 }
 
 /** ポジションの並び順（UI・整列用） */

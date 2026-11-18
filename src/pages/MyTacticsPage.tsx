@@ -101,8 +101,9 @@ export default function MyTacticsPage({ focusId, onOpenBoard, onGoRecommend }: P
                 />
               ) : (
                 <>
-                  <Button onClick={() => onOpenBoard(open, 'attack')}>攻撃時を盤面で見る</Button>
-                  <Button onClick={() => onOpenBoard(open, 'defense')}>守備時を盤面で見る</Button>
+                  <Button tone="primary" onClick={() => onOpenBoard(open, 'attack')}>
+                    戦術ボードで編集
+                  </Button>
                   <Button onClick={() => setRenaming(open.id)}>名前を変える</Button>
                   <span className="flex-1" />
                   {confirmDelete ? (

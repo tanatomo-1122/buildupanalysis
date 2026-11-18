@@ -34,7 +34,10 @@ const API = 'http://localhost:54321/rest/v1';
 
 /* ── 未ログイン：入口だけが見え、他人のデータは取れない ───────── */
 await page.goto(BASE, { waitUntil: 'networkidle' });
-check('未ログインでは Google ログインの入口が出る', (await page.getByRole('button', { name: 'Google でログイン' }).count()) === 1);
+check('最初はホーム（趣旨説明）が開く', (await page.getByTestId('home').count()) === 1);
+check('未ログインでは Google ログインの入口が出る', (await page.getByRole('button', { name: /Google でログイン/ }).count()) >= 1);
+check('未ログインでも戦術ボードへの入口がある', (await page.getByRole('button', { name: 'ログインせずにボードを触る' }).count()) === 1);
+await page.screenshot({ path: '/tmp/home-guest.png', fullPage: true });
 check('未ログインでは他人のプロフィール一覧が出ない', (await page.getByText('登録済みのユーザー').count()) === 0);
 const anonProfiles = await (await fetch(`${API}/profiles?select=*`, { headers: { apikey: 'mock' } })).json();
 check('未ログインの API からはプロフィールが読めない', Array.isArray(anonProfiles) && anonProfiles.length === 0, `${anonProfiles.length}件`);
@@ -44,10 +47,13 @@ const session = JSON.parse(process.env.E2E_SESSION);
 await page.evaluate((s) => localStorage.setItem('buildup-board:session', JSON.stringify(s)), session);
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(1500);
-check('選手がそろっていればログイン直後は戦術提案が開く', (await page.getByRole('button', { name: 'この相手に効く形を探す' }).count()) === 1);
+check('ログイン後もホームから始まる', (await page.getByTestId('home').count()) === 1);
+await page.getByRole('button', { name: '戦術提案をはじめる' }).click();
+await page.waitForTimeout(300);
+check('選手がそろっていればホームから戦術提案へ進める', (await page.getByRole('button', { name: 'この相手に効く形を探す' }).count()) === 1);
 
 /* ── チームカラー ─────────────────────────────────────── */
-await page.getByRole('button', { name: 'クラブ', exact: true }).click();
+await page.getByTitle('クラブの設定').click();
 await page.waitForTimeout(300);
 await page.getByRole('radio', { name: 'アズール' }).click();
 await page.waitForTimeout(400);
@@ -106,7 +112,7 @@ check('23名が登録され、提案タブが使える', warn === 0);
 
 /* ── 相手の形の入力（プリセット＋人数） ───────────────────── */
 const picker = page.getByTestId('opponent-picker');
-const oppName = () => page.getByTestId('opponent-name').innerText();
+const oppName = () => page.getByTestId('opponent-picker-name').innerText();
 check('既定の相手は 4-2-3-1', (await oppName()) === '4-2-3-1');
 await picker.getByRole('button', { name: '4-3-3', exact: true }).click();
 await page.waitForTimeout(150);
@@ -344,6 +350,111 @@ const [download] = await Promise.all([
 ]);
 check('共有カード画像を保存できる', !!download, download ? download.suggestedFilename() : 'なし');
 if (download) await download.saveAs('/tmp/share-card.png');
+
+/* ── 戦術ボード：保存した戦術を開いて動かす ─────────────── */
+const shape = () => page.getByTestId('board-home-shape').innerText();
+const scoreOf = async () => Number((await page.getByTestId('board-score').innerText()).replace('−', '-'));
+const listTitle = await page.locator('article h2').innerText();
+// 既定の名前は「対<相手> <攻撃時>/<守備時>」
+const [savedAttack, savedDefense] = listTitle.split(' ')[1].split('/');
+await page.getByRole('button', { name: '戦術ボードで編集' }).click();
+await page.waitForTimeout(800);
+check('マイ戦術から戦術ボードで開ける', (await page.getByTestId('board-score').count()) === 1);
+check('開いた形が保存した攻撃時の形', (await shape()) === savedAttack, `${await shape()} / ${savedAttack}`);
+check('内訳の表は最初は出ていない（シンプル表示）', (await page.getByText('起点別の内訳').count()) === 0);
+check('ボールは最初は出ていない', (await page.locator('svg.touch-none circle[fill="#fef9c3"]').isVisible()) === false);
+
+await page.getByRole('tab', { name: '守備のとき' }).click();
+await page.waitForTimeout(500);
+const defenseShape = await shape();
+check('守備のときに切り替えると守備の形になる', defenseShape === savedDefense, `${defenseShape} / ${savedDefense}`);
+await page.getByRole('tab', { name: '攻撃のとき' }).click();
+await page.waitForTimeout(500);
+check('攻撃のときに戻すと攻撃の形に戻る', (await shape()) === savedAttack);
+
+// ドラッグで動かすと数字が変わり、1つ戻すで戻る
+const before0 = await scoreOf();
+const boardSvg = page.locator('svg.touch-none');
+const bbox = await boardSvg.boundingBox();
+const tokens = await page.evaluate(() => {
+  const svg = document.querySelector('svg.touch-none');
+  const hex = getComputedStyle(document.documentElement).getPropertyValue('--team-hex').trim();
+  return [...svg.querySelectorAll('g')].filter((g) => !g.querySelector('g'))
+    .map((g) => {
+      const c = [...g.querySelectorAll('circle')].find((x) => x.getAttribute('fill') === hex);
+      const t = g.querySelector('text');
+      return c && t ? { n: t.textContent, x: +c.getAttribute('cx'), y: 68 - +c.getAttribute('cy') } : null;
+    })
+    .filter(Boolean);
+});
+check('自分の11人が描かれている', tokens.length === 11, `${tokens.length}人`);
+const mover = tokens.filter((t) => t.x > 30).sort((a, b) => b.x - a.x)[3];
+const scr = (x, y) => ({ x: bbox.x + (x / 105) * bbox.width, y: bbox.y + ((68 - y) / 68) * bbox.height });
+const p0 = scr(mover.x, mover.y);
+const p1 = scr(Math.min(100, mover.x + 12), mover.y);
+await page.mouse.move(p0.x, p0.y);
+await page.mouse.down();
+await page.mouse.move(p1.x, p1.y, { steps: 10 });
+await page.mouse.up();
+await page.waitForTimeout(300);
+const after0 = await scoreOf();
+check('選手を動かすと期待値が変わる', after0 !== before0, `${before0} → ${after0}`);
+check('1つ前との差が出る', (await page.getByTestId('board-delta').count()) === 1);
+check('動かした選手の入れ替え欄が出る', (await page.getByTestId('board-selected').count()) === 1);
+await page.getByRole('button', { name: '← 1つ戻す' }).click();
+await page.waitForTimeout(300);
+check('1つ戻すで元の期待値に戻る', (await scoreOf()) === before0, `${await scoreOf()}`);
+
+// 控えと交代
+await page.mouse.click(p0.x, p0.y);
+await page.waitForTimeout(200);
+const sel = page.locator('#board-slot-player');
+const benchOpt = await sel.locator('optgroup[label^="控え"] option').first().getAttribute('value');
+const benchName = (await sel.locator('optgroup[label^="控え"] option').first().innerText()).split('（')[0];
+await sel.selectOption(benchOpt);
+await page.waitForTimeout(300);
+check('控えの選手と交代できる', (await page.getByTestId('board-selected').innerText()).includes(benchName), benchName);
+
+// 自分の形を人数で選び直す
+await page.getByTestId('board-home-picker').getByRole('button', { name: '4-4-2', exact: true }).click();
+await page.waitForTimeout(400);
+check('ボードでも自分の形をプリセットで替えられる', (await shape()) === '4-4-2');
+
+// 詳しい表示
+await page.getByRole('button', { name: 'くわしく見る' }).click();
+await page.waitForTimeout(400);
+check('くわしく見るで内訳が出る', (await page.getByText('起点別の内訳').count()) === 1);
+await page.screenshot({ path: '/tmp/board-detail.png', fullPage: true });
+await page.getByRole('button', { name: 'くわしい表示を閉じる' }).click();
+await page.waitForTimeout(200);
+
+// 上書き保存と、新しく保存
+check('マイ戦術から開いた戦術は上書き保存できる', (await page.getByRole('button', { name: '上書き保存' }).count()) === 1);
+await page.getByRole('button', { name: '上書き保存' }).click();
+await page.waitForTimeout(500);
+check('上書き保存の完了が出る', (await page.getByText('上書き保存しました').count()) === 1);
+await page.screenshot({ path: '/tmp/board.png', fullPage: true });
+await page.getByRole('button', { name: 'この戦術を保存' }).click();
+await page.waitForTimeout(800);
+check('ボードから新しく保存するとマイ戦術に増える', (await page.getByRole('list', { name: '保存した戦術' }).locator('li').count()) === 2);
+const top = await page.locator('article h2').innerText();
+check('ボードから保存した戦術の詳細が開く（名前は今の形から付く）', /^対\S+ 4-4-2\//.test(top), top);
+
+/* ── ログインなしでボードを触る ──────────────────────── */
+const guest2 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+guest2.on('pageerror', (e) => errors.push(`guest2: ${e}`));
+await guest2.goto(BASE, { waitUntil: 'networkidle' });
+await guest2.getByRole('button', { name: 'ログインせずにボードを触る' }).click();
+await guest2.waitForTimeout(500);
+check('ログインなしでもボードの期待値が出る', (await guest2.getByTestId('board-score').count()) === 1);
+check('ログインなしの初期の形は 4-3-3 対 4-2-3-1',
+  (await guest2.getByTestId('board-home-shape').innerText()) === '4-3-3' &&
+  (await guest2.getByTestId('board-away-shape').innerText()) === '4-2-3-1');
+check('ログインなしでは保存の代わりにログインの案内が出る', (await guest2.getByRole('button', { name: 'ログインして保存する' }).count()) === 1);
+const hs2 = await guest2.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+check('ボードもスマホ幅で横スクロールしない', hs2 <= 1, `${hs2}px`);
+await guest2.screenshot({ path: '/tmp/board-mobile.png', fullPage: true });
+await guest2.close();
 
 check('コンソールエラーなし', errors.length === 0, errors.slice(0, 3).join(' | '));
 

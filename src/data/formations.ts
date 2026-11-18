@@ -485,6 +485,40 @@ export const typesOf = (family: string): Formation[] =>
 
 export const formationById = (id: string): Formation => BY_ID.get(id) ?? FORMATIONS[0];
 
+/* ------------------------------------------------------------------ *
+ * ポジションの人数 → カタログの形
+ *
+ * 人数の組み合わせ（CB が何人、LSB がいるか…）とカタログの形は 1 対 1 に対応する。
+ * 人数入力のピッカーと、盤面で動かした配置に名前を付けるのに使う。
+ * ------------------------------------------------------------------ */
+
+const COUNT_ORDER: PositionId[] = [
+  'CB', 'LSB', 'RSB', 'DMF', 'CMF', 'LMF', 'RMF', 'OMF', 'LWG', 'RWG', 'ST', 'CF',
+];
+
+/** GK を除く10人のポジションから作るキー（並び順に依らない） */
+export const countKey = (positions: PositionId[]): string => {
+  const c = new Map<PositionId, number>();
+  for (const p of positions) if (p !== 'GK') c.set(p, (c.get(p) ?? 0) + 1);
+  return COUNT_ORDER.map((p) => c.get(p) ?? 0).join(',');
+};
+
+let byCount: Map<string, Formation> | null = null;
+
+/** その人数配分がカタログにあれば返す（eFootball のエディットで組める形か、の判定にもなる） */
+export const formationByPositions = (positions: PositionId[]): Formation | undefined => {
+  if (!byCount) {
+    byCount = new Map();
+    for (const f of FORMATIONS) {
+      const k = countKey(f.slots.map((sl) => sl.position));
+      if (!byCount.has(k)) byCount.set(k, f);
+    }
+  }
+  return positions.filter((p) => p !== 'GK').length === 10
+    ? byCount.get(countKey(positions))
+    : undefined;
+};
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** スロットの座標を、そのチームの向きとライン高さに合わせて実座標へ変換する */
